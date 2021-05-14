@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import Agility from '../../lib/skilling/skills/agility';
@@ -56,15 +56,17 @@ export default class extends BotCommand {
 			);
 		}
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Agility);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max.
 		const timePerLap = course.lapTime * Time.Second;
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timePerLap);
 		}
-		const duration = quantity * timePerLap;
+		const duration = quantity * timePerLap * xpBoost;
 
+		console.log(maxTripLength, duration);
+		
 		if (duration > maxTripLength) {
 			return msg.send(
 				`${msg.author.minionName} can't go on trips longer than ${formatDuration(

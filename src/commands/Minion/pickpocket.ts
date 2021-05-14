@@ -2,7 +2,7 @@ import { Time } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 
-import { Activity } from '../../lib/constants';
+import { Activity, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import removeFoodFromUser from '../../lib/minions/functions/removeFoodFromUser';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
@@ -105,14 +105,14 @@ export default class extends BotCommand {
 
 		const timeToPickpocket = (pickpocketable.customTickRate ?? 2) * 600;
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Pickpocket);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max the player can make by either the items in bank or max time.
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timeToPickpocket);
 		}
 
-		const duration = quantity * timeToPickpocket;
+		const duration = quantity * timeToPickpocket * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(

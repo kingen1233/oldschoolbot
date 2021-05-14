@@ -1,6 +1,7 @@
 import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
+import { Bank } from 'oldschooljs';
 
-import { Activity, Emoji, Time } from '../../lib/constants';
+import { Activity, Emoji, Time, xpBoost } from '../../lib/constants';
 import { hasArrayOfItemsEquipped, hasItemEquipped } from '../../lib/gear';
 import { GearSetupTypes } from '../../lib/gear/types';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
@@ -8,11 +9,12 @@ import calculateMonsterFood from '../../lib/minions/functions/calculateMonsterFo
 import hasEnoughFoodForMonster from '../../lib/minions/functions/hasEnoughFoodForMonster';
 import removeFoodFromUser from '../../lib/minions/functions/removeFoodFromUser';
 import { KillableMonster } from '../../lib/minions/types';
+import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { MakePartyOptions } from '../../lib/types';
 import { NightmareActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration } from '../../lib/util';
+import { formatDuration, updateBankSetting } from '../../lib/util';
 import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
 import calcDurQty from '../../lib/util/calcMassDurationQuantity';
 import { getNightmareGearStats } from '../../lib/util/getNightmareGearStats';
@@ -196,12 +198,13 @@ export default class extends BotCommand {
 		);
 		this.checkReqs(users, NightmareMonster, quantity);
 
-		duration = quantity * perKillTime - NightmareMonster.respawnTime!;
+		duration = quantity * perKillTime - NightmareMonster.respawnTime! * xpBoost;
 
+		const totalCost = new Bank();
 		if (NightmareMonster.healAmountNeeded) {
 			for (const user of users) {
 				const [healAmountNeeded] = calculateMonsterFood(NightmareMonster, user);
-				await removeFoodFromUser({
+				const [, foodRemoved] = await removeFoodFromUser({
 					client: this.client,
 					user,
 					totalHealingNeeded: Math.ceil(healAmountNeeded / users.length) * quantity,
@@ -209,8 +212,11 @@ export default class extends BotCommand {
 					activityName: NightmareMonster.name,
 					attackStylesUsed: [GearSetupTypes.Melee]
 				});
+				totalCost.add(foodRemoved);
 			}
 		}
+
+		await updateBankSetting(this.client, ClientSettings.EconomyStats.PVMCost, totalCost);
 
 		await addSubTaskToActivityTask<NightmareActivityTaskOptions>(this.client, {
 			userID: msg.author.id,

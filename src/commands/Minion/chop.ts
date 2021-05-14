@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity } from '../../lib/constants';
+import { Activity, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import Woodcutting from '../../lib/skilling/skills/woodcutting';
@@ -112,14 +112,14 @@ export default class extends BotCommand {
 			}
 		}
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Woodcutting);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max.
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timetoChop);
 		}
 
-		const duration = quantity * timetoChop;
+		const duration = quantity * timetoChop * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.channel.send(

@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity } from '../../lib/constants';
+import { Activity, xpBoost } from '../../lib/constants';
 import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
 import ClueTiers from '../../lib/minions/data/clueTiers';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
@@ -56,9 +56,9 @@ export default class extends BotCommand {
 
 		if (percentReduced >= 1) boosts.push(`${percentReduced}% for clue score`);
 
-		let duration = timeToFinish * quantity;
+		let duration = timeToFinish * quantity * xpBoost;
 
-		const maxTripLength = msg.author.maxTripLength(Activity.ClueCompletion);
+		const maxTripLength = 200984200 
 
 		if (duration > maxTripLength) {
 			return msg.send(

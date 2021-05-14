@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import Firemaking from '../../lib/skilling/skills/firemaking';
@@ -54,7 +54,7 @@ export default class extends BotCommand {
 		// All logs take 2.4s to light, add on quarter of a second to account for banking/etc.
 		const timeToLightSingleLog = Time.Second * 2.4 + Time.Second / 4;
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Firemaking);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max.
 		if (quantity === null) {
@@ -75,7 +75,7 @@ export default class extends BotCommand {
 			return msg.send(`You dont have ${quantity}x ${log.name}.`);
 		}
 
-		const duration = quantity * timeToLightSingleLog;
+		const duration = quantity * timeToLightSingleLog * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(

@@ -2,13 +2,14 @@ import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank, Util } from 'oldschooljs';
 import { Item } from 'oldschooljs/dist/meta/types';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
+import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { SkillsEnum } from '../../lib/skilling/types';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { AlchingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration } from '../../lib/util';
+import { formatDuration, updateBankSetting } from '../../lib/util';
 import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
 import resolveItems from '../../lib/util/resolveItems';
 
@@ -53,7 +54,7 @@ export default class extends BotCommand {
 
 		// 5 tick action
 		const timePerAlch = Time.Second * 3;
-		const maxTripLength = msg.author.maxTripLength(Activity.Alching);
+		const maxTripLength = 200984200 
 
 		const maxCasts = Math.min(Math.floor(maxTripLength / timePerAlch), userBank[osItem.id]);
 
@@ -65,7 +66,7 @@ export default class extends BotCommand {
 			return msg.send(`The max number of alchs you can do is ${maxCasts}!`);
 		}
 
-		const duration = quantity * timePerAlch;
+		const duration = quantity * timePerAlch * xpBoost;
 		let fireRuneCost = quantity * 5;
 
 		for (const runeProvider of unlimitedFireRuneProviders) {
@@ -112,6 +113,11 @@ export default class extends BotCommand {
 		}
 
 		await msg.author.removeItemsFromBank(consumedItems);
+		await updateBankSetting(
+			this.client,
+			ClientSettings.EconomyStats.MagicCostBank,
+			consumedItems
+		);
 
 		await addSubTaskToActivityTask<AlchingActivityTaskOptions>(this.client, {
 			itemID: osItem.id,

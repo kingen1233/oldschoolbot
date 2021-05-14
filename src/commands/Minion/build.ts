@@ -1,7 +1,7 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
@@ -80,7 +80,7 @@ export default class extends BotCommand {
 		const userBank = msg.author.bank();
 		const planksHas = userBank.amount(plank);
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Construction);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max the player can make by either the items in bank or time.
 		if (quantity === null) {
@@ -102,7 +102,7 @@ export default class extends BotCommand {
 		const objectsPerInv = 26 / planksQtyCost;
 		const invsPerTrip = round(quantity / objectsPerInv, 2);
 
-		const duration = quantity * timeToBuildSingleObject;
+		const duration = quantity * timeToBuildSingleObject * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(

@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
 import { Planks } from '../../lib/minions/data/planks';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
@@ -72,7 +72,7 @@ export default class extends BotCommand {
 			boosts.push(`10% for Woodcutting Guild unlocked`);
 		}
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Sawmill);
+		const maxTripLength = 200984200 
 
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timePerPlank);
@@ -94,7 +94,7 @@ export default class extends BotCommand {
 			return msg.send(`You need ${toKMB(cost)} GP to create ${quantity} planks.`);
 		}
 
-		const duration = quantity * timePerPlank;
+		const duration = quantity * timePerPlank * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(

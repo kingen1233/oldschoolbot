@@ -1,7 +1,7 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { SkillsEnum } from '../../lib/skilling/types';
@@ -72,7 +72,7 @@ export default class extends BotCommand {
 		const userBank = new Bank(msg.author.settings.get(UserSettings.Bank));
 
 		if (minigame === 'tokens') {
-			const maxTripLength = msg.author.maxTripLength(Activity.AnimatedArmour);
+			const maxTripLength = 200984200 
 
 			const armorSet = Armours.find(set => userBank.has(set.items));
 			if (!armorSet) {
@@ -87,7 +87,7 @@ export default class extends BotCommand {
 				quantity = Math.floor(maxTripLength / armorSet.timeToFinish);
 			}
 
-			const duration = armorSet.timeToFinish * quantity;
+			const duration = armorSet.timeToFinish * quantity * xpBoost;
 
 			if (duration > maxTripLength) {
 				return msg.send(
@@ -116,7 +116,7 @@ export default class extends BotCommand {
 		}
 
 		if (minigame === 'cyclops') {
-			const maxTripLength = msg.author.maxTripLength(Activity.Cyclops);
+			const maxTripLength = 200984200 
 			// Check if either 100 warrior guild tokens or attack cape (similar items in future)
 			const amountTokens = userBank.amount('Warrior guild token');
 			if (amountTokens < 100) {
@@ -131,7 +131,7 @@ export default class extends BotCommand {
 				);
 			}
 
-			const duration = Time.Second * 30 * quantity;
+			const duration = Time.Second * 30 * quantity * xpBoost;
 
 			if (duration > maxTripLength) {
 				return msg.send(

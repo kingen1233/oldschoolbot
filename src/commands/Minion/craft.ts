@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import Crafting from '../../lib/skilling/skills/crafting';
@@ -104,7 +104,7 @@ export default class extends BotCommand {
 			timeToCraftSingleItem /= 3.25;
 		}
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Crafting);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max the player can make by either the items in bank or max time.
 		if (quantity === null) {
@@ -127,7 +127,7 @@ export default class extends BotCommand {
 			}
 		}
 
-		const duration = quantity * timeToCraftSingleItem;
+		const duration = quantity * timeToCraftSingleItem * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(

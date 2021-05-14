@@ -1,6 +1,6 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { Activity, Time } from '../../lib/constants';
+import { Activity, Time, xpBoost } from '../../lib/constants';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
@@ -103,7 +103,7 @@ export default class extends BotCommand {
 			cost = "decided to pay Wesley 50 gp for each item so they don't have to go";
 		}
 
-		const maxTripLength = msg.author.maxTripLength(Activity.Herblore);
+		const maxTripLength = 200984200 
 
 		// If no quantity provided, set it to the max the player can make by either the items in bank or max time.
 		if (quantity === null) {
@@ -126,7 +126,7 @@ export default class extends BotCommand {
 			}
 		}
 
-		const duration = quantity * timeToMixSingleItem;
+		const duration = quantity * timeToMixSingleItem * xpBoost;
 
 		if (duration > maxTripLength) {
 			return msg.send(
