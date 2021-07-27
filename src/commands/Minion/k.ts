@@ -157,7 +157,7 @@ export default class extends BotCommand {
 
 		duration = randomVariation(duration, 3);
 		//BOOST
-		boosts.push(`100% for Andre having big cock`);
+		boosts.push(`100% for Mike being a cutie`);
 		duration *= 0.5
 
 		if (isWeekend()) {
