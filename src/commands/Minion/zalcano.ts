@@ -2,7 +2,7 @@ import { calcWhatPercent, percentChance, reduceNumByPercent } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 
 import { Activity, Time, xpBoost, ZALCANO_ID } from '../../lib/constants';
-import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
+//import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import removeFoodFromUser from '../../lib/minions/functions/removeFoodFromUser';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
@@ -85,7 +85,7 @@ export default class extends BotCommand {
 		else if (kc > 50) healAmountNeeded = 3 * 12;
 		else if (kc > 20) healAmountNeeded = 5 * 12;
 
-		const quantity = Math.floor(msg.author.maxTripLength(Activity.Zalcano) / baseTime);
+		const quantity = 32;//Math.floor(msg.author.maxTripLength(Activity.Zalcano) / baseTime);
 		const duration = quantity * baseTime * xpBoost;
 
 		const [food] = await removeFoodFromUser({

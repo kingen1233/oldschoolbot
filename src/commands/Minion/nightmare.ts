@@ -198,7 +198,7 @@ export default class extends BotCommand {
 		);
 		this.checkReqs(users, NightmareMonster, quantity);
 
-		duration = quantity * perKillTime - NightmareMonster.respawnTime! * xpBoost;
+		duration = quantity * perKillTime * xpBoost- NightmareMonster.respawnTime! ;
 
 		const totalCost = new Bank();
 		if (NightmareMonster.healAmountNeeded) {

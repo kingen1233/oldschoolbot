@@ -1,7 +1,7 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 
 import { Activity, Time, xpBoost } from '../../lib/constants';
-import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
+//import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
 import { Planks } from '../../lib/minions/data/planks';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';

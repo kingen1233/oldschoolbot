@@ -1,17 +1,17 @@
-import { Time } from 'e';
-import { CommandStore, KlasaMessage } from 'klasa';
-import { Bank } from 'oldschooljs';
-import { Item } from 'oldschooljs/dist/meta/types';
+import { Time } from "e";
+import { CommandStore, KlasaMessage } from "klasa";
+import { Bank } from "oldschooljs";
+import { Item } from "oldschooljs/dist/meta/types";
 
-import { Activity, xpBoost } from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { ClientSettings } from '../../lib/settings/types/ClientSettings';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { Skills } from '../../lib/types';
-import { CollectingOptions } from '../../lib/types/minions';
-import { addBanks, formatDuration, stringMatches } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
-import getOSItem from '../../lib/util/getOSItem';
+import { Activity, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { ClientSettings } from "../../lib/settings/types/ClientSettings";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { Skills } from "../../lib/types";
+import { CollectingOptions } from "../../lib/types/minions";
+import { addBanks, formatDuration, stringMatches } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
+import getOSItem from "../../lib/util/getOSItem";
 
 interface Collectable {
 	item: Item;
@@ -24,50 +24,50 @@ interface Collectable {
 
 export const collectables: Collectable[] = [
 	{
-		item: getOSItem('Blue dragon scale'),
+		item: getOSItem("Blue dragon scale"),
 		quantity: 26,
 		itemCost: new Bank({
-			'Water rune': 1,
-			'Air rune': 3,
-			'Law rune': 1
+			"Water rune": 1,
+			"Air rune": 3,
+			"Law rune": 1,
 		}),
 		skillReqs: {
 			agility: 70,
-			magic: 37
+			magic: 37,
 		},
-		duration: Time.Minute * 2
+		duration: Time.Minute * 2 * 0.5,
 	},
 	{
-		item: getOSItem('Mort myre fungus'),
+		item: getOSItem("Mort myre fungus"),
 		quantity: 100,
 		itemCost: new Bank({
-			'Prayer potion(4)': 1,
-			'Ring of dueling(8)': 1
+			"Prayer potion(4)": 1,
+			"Ring of dueling(8)": 1,
 		}),
 		skillReqs: {
-			prayer: 50
+			prayer: 50,
 		},
-		duration: Time.Minute * 8.3,
-		qpRequired: 32
+		duration: Time.Minute * 8.3 * 0.5,
+		qpRequired: 32,
 	},
 	{
 		item: getOSItem("Red spiders' eggs"),
 		quantity: 80,
 		itemCost: new Bank({
-			'Stamina potion(4)': 1
+			"Stamina potion(4)": 1,
 		}),
-		duration: Time.Minute * 8.5
+		duration: Time.Minute * 8.5 * 0.5,
 	},
 	{
-		item: getOSItem('Snape grass'),
+		item: getOSItem("Snape grass"),
 		quantity: 120,
 		itemCost: new Bank({
-			'Law rune': 12,
-			'Astral rune': 12
+			"Law rune": 12,
+			"Astral rune": 12,
 		}),
-		duration: Time.Minute * 6.5,
-		qpRequired: 72
-	}
+		duration: Time.Minute * 6.5 * 0.5,
+		qpRequired: 72,
+	},
 ];
 
 export default class extends BotCommand {
@@ -76,31 +76,36 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '<quantity:int{1}|name:...string> [name:...string]',
-			usageDelim: ' ',
-			description: 'Sends your minion to collect items.',
-			categoryFlags: ['minion'],
-			examples: ['+collect snape grass']
+			usage: "<quantity:int{1}|name:...string> [name:...string]",
+			usageDelim: " ",
+			description: "Sends your minion to collect items.",
+			categoryFlags: ["minion"],
+			examples: ["+collect snape grass"],
 		});
 	}
 
 	@requiresMinion
 	@minionNotBusy
-	async run(msg: KlasaMessage, [quantity, objectName = '']: [null | number | string, string]) {
-		if (typeof quantity === 'string') {
+	async run(
+		msg: KlasaMessage,
+		[quantity, objectName = ""]: [null | number | string, string]
+	) {
+		if (typeof quantity === "string") {
 			objectName = quantity;
 			quantity = null;
 		}
-		const collectable = collectables.find(c => stringMatches(c.item.name, objectName));
+		const collectable = collectables.find((c) =>
+			stringMatches(c.item.name, objectName)
+		);
 		if (!collectable) {
 			return msg.channel.send(
 				`That's not something your minion can collect, you can collect these things: ${collectables
-					.map(i => i.item.name)
-					.join(', ')}.`
+					.map((i) => i.item.name)
+					.join(", ")}.`
 			);
 		}
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 3600000;
 
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / collectable.duration);
@@ -109,7 +114,9 @@ export default class extends BotCommand {
 		let duration = collectable.duration * quantity * xpBoost;
 		if (duration > maxTripLength) {
 			return msg.send(
-				`${msg.author.minionName} can't go on a trip longer than ${formatDuration(
+				`${
+					msg.author.minionName
+				} can't go on a trip longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount you can do for ${
 					collectable.item.name
@@ -128,8 +135,10 @@ export default class extends BotCommand {
 		await this.client.settings.update(
 			ClientSettings.EconomyStats.CollectingCost,
 			addBanks([
-				this.client.settings.get(ClientSettings.EconomyStats.CollectingCost),
-				cost.bank
+				this.client.settings.get(
+					ClientSettings.EconomyStats.CollectingCost
+				),
+				cost.bank,
 			])
 		);
 
@@ -139,13 +148,15 @@ export default class extends BotCommand {
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.Collecting
+			type: Activity.Collecting,
 		});
 
 		return msg.send(
-			`${msg.author.minionName} is now collecting ${quantity * collectable.quantity}x ${
-				collectable.item.name
-			}, it'll take around ${formatDuration(duration)} to finish.
+			`${msg.author.minionName} is now collecting ${
+				quantity * collectable.quantity
+			}x ${collectable.item.name}, it'll take around ${formatDuration(
+				duration
+			)} to finish.
 
 Removed ${cost} from your bank.`
 		);

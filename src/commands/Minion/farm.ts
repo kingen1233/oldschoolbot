@@ -2,7 +2,7 @@ import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 
 import { Activity, Time, xpBoost } from '../../lib/constants';
-import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
+//import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
 import defaultPatches from '../../lib/minions/farming/defaultPatches';
 import resolvePatchTypeSetting from '../../lib/minions/farming/functions/resolvePatchTypeSettings';

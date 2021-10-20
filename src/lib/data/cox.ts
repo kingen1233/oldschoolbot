@@ -397,6 +397,10 @@ export async function calcCoxDuration(
 	duration -= duration * (teamSizeBoostPercent(size) / 100);
 
 	duration = randomVariation(duration, 5);
+
+	// Finally XPBOOST
+	duration = duration*0.5;
+
 	return { duration, reductions, totalReduction: totalSpeedReductions / size };
 }
 

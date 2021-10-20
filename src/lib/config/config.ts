@@ -1,8 +1,8 @@
-import { KlasaClient, KlasaClientOptions } from 'klasa';
+import { KlasaClient, KlasaClientOptions } from "klasa";
 
-import { customClientOptions, production, providerConfig } from '../../config';
-import { Intents } from './Intents';
-import permissionLevels from './permissionLevels';
+import { customClientOptions, production, providerConfig } from "../../config";
+import { Intents } from "./Intents";
+import permissionLevels from "./permissionLevels";
 
 export const clientOptions: KlasaClientOptions = {
 	/* Discord.js Options */
@@ -10,35 +10,35 @@ export const clientOptions: KlasaClientOptions = {
 	messageCacheMaxSize: 200,
 	messageCacheLifetime: 120,
 	messageSweepInterval: 120,
-	disabledEvents: ['CHANNEL_PINS_UPDATE'],
+	disabledEvents: ["CHANNEL_PINS_UPDATE"],
 	disableEveryone: true,
-	shards: 'auto',
+	shards: "auto",
 	ws: {
 		// @ts-ignore Intents aren't documented as a valid WS property in our current d.js version
 		intents: new Intents([
-			'GUILDS',
-			'GUILD_MEMBERS',
-			'GUILD_MESSAGES',
-			'GUILD_MESSAGE_REACTIONS',
-			'DIRECT_MESSAGES',
-			'DIRECT_MESSAGE_REACTIONS'
-		]).bitfield
+			"GUILDS",
+			"GUILD_MEMBERS",
+			"GUILD_MESSAGES",
+			"GUILD_MESSAGE_REACTIONS",
+			"DIRECT_MESSAGES",
+			"DIRECT_MESSAGE_REACTIONS",
+		]).bitfield,
 	},
 	http: {
-		api: 'https://discord.com/api'
+		api: "https://discord.com/api",
 	},
 	/* Klasa Options */
 	createPiecesFolders: false,
-	prefix: '+',
+	prefix: "+",
 	providers: providerConfig ?? undefined,
 	permissionLevels,
 	pieceDefaults: { commands: { deletable: true } },
 	readyMessage: (client: KlasaClient) =>
 		`[Old School Bot] Ready to serve ${client.guilds.size} guilds.`,
 	schedule: {
-		interval: 10000
+		interval: 10000,
 	},
-	partials: ['USER'],
+	partials: ["USER"],
 	production,
-	...customClientOptions
+	...customClientOptions,
 };
