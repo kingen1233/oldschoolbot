@@ -9,7 +9,7 @@ export default class extends Task {
 	async run(data: ClueActivityTaskOptions) {
 		const { clueID, userID, channelID, quantity } = data;
 		const clueTier = clueTiers.find(mon => mon.id === clueID);
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const logInfo = `ClueID[${clueID}] userID[${userID}] channelID[${channelID}] quantity[${quantity}]`;
 
@@ -18,9 +18,9 @@ export default class extends Task {
 			return;
 		}
 
-		const str = `${user}, ${user.minionName} finished completing ${quantity} ${
-			clueTier.name
-		} clues. ${user.minionName} carefully places the reward casket${
+		const str = `${user}, ${user.minionName} finished completing ${quantity} ${clueTier.name} clues. ${
+			user.minionName
+		} carefully places the reward casket${
 			quantity > 1 ? 's' : ''
 		} in your bank. You can open this casket using \`+open ${clueTier.name}\``;
 

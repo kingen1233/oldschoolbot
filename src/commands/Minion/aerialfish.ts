@@ -1,65 +1,66 @@
-import { CommandStore, KlasaMessage } from 'klasa';
+import { CommandStore, KlasaMessage } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost} from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { SkillsEnum } from '../../lib/skilling/types';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { AerialFishingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, randFloat, stringMatches } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
-import chatHeadImage from '../../lib/util/chatHeadImage';
-import getOSItem from '../../lib/util/getOSItem';
-import itemID from '../../lib/util/itemID';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { SkillsEnum } from "../../lib/skilling/types";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { AerialFishingActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration, randFloat, stringMatches } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
+import chatHeadImage from "../../lib/util/chatHeadImage";
+import getOSItem from "../../lib/util/getOSItem";
+import itemID from "../../lib/util/itemID";
 
 const buyables = [
 	{
-		item: getOSItem('Angler hat'),
+		item: getOSItem("Angler hat"),
 		cost: 100,
-		aliases: []
+		aliases: [],
 	},
 	{
-		item: getOSItem('Angler top'),
+		item: getOSItem("Angler top"),
 		cost: 100,
-		aliases: []
+		aliases: [],
 	},
 	{
-		item: getOSItem('Angler waders'),
+		item: getOSItem("Angler waders"),
 		cost: 100,
-		aliases: ['angler legs']
+		aliases: ["angler legs"],
 	},
 	{
-		item: getOSItem('Angler boots'),
+		item: getOSItem("Angler boots"),
 		cost: 100,
-		aliases: []
+		aliases: [],
 	},
 	{
-		item: getOSItem('Pearl fishing rod'),
+		item: getOSItem("Pearl fishing rod"),
 		cost: 100,
-		aliases: []
+		aliases: [],
 	},
 	{
-		item: getOSItem('Pearl fly fishing rod'),
+		item: getOSItem("Pearl fly fishing rod"),
 		cost: 120,
-		aliases: ['pearl fly rod']
+		aliases: ["pearl fly rod"],
 	},
 	{
-		item: getOSItem('Pearl barbarian rod'),
+		item: getOSItem("Pearl barbarian rod"),
 		cost: 150,
-		aliases: ['pearl barb rod']
+		aliases: ["pearl barb rod"],
 	},
 	{
-		item: getOSItem('Fish sack'),
+		item: getOSItem("Fish sack"),
 		cost: 1000,
-		aliases: []
-	}
+		aliases: [],
+	},
 ];
 
 const sellables = [
 	{
-		item: getOSItem('Golden tench'),
+		item: getOSItem("Golden tench"),
 		cost: 100,
-		aliases: []
-	}
+		aliases: [],
+	},
 ];
 
 export default class extends BotCommand {
@@ -67,23 +68,24 @@ export default class extends BotCommand {
 		super(store, file, directory, {
 			altProtection: true,
 			oneAtTime: true,
-			usage: '[buy|sell|run] [name:...string|tripTime:int{1}]',
+			usage: "[buy|sell|run] [name:...string|tripTime:int{1}]",
 			subcommands: true,
-			usageDelim: ' ',
+			usageDelim: " ",
 			cooldown: 1,
-			aliases: ['aerial', 'af'],
-			description: 'Sends your minion to aerial fish, allowing you to get the angler outfit.',
-			examples: ['+aerialfishing 30', '+aerialfishing buy fish sack'],
-			categoryFlags: ['minion', 'skilling']
+			aliases: ["aerial", "af"],
+			description:
+				"Sends your minion to aerial fish, allowing you to get the angler outfit.",
+			examples: ["+aerialfishing 30", "+aerialfishing buy fish sack"],
+			categoryFlags: ["minion", "skilling"],
 		});
 	}
 
 	@minionNotBusy
 	@requiresMinion
 	async run(msg: KlasaMessage, [tripTime]: [number | string | undefined]) {
-		const maxTripLength = 100984200 
+		const maxTripLength = 100984200;
 
-		if (typeof tripTime !== 'number') {
+		if (typeof tripTime !== "number") {
 			tripTime = Math.floor(maxTripLength / Time.Minute);
 		}
 		await msg.author.settings.sync(true);
@@ -92,13 +94,13 @@ export default class extends BotCommand {
 			msg.author.skillLevel(SkillsEnum.Fishing) < 43 ||
 			msg.author.skillLevel(SkillsEnum.Hunter) < 35
 		) {
-			return msg.send(
-				`You need atleast level 35 Hunter and 43 Fishing to do Aerial fishing.`
+			return msg.channel.send(
+				"You need atleast level 35 Hunter and 43 Fishing to do Aerial fishing."
 			);
 		}
 
 		if (!Number(tripTime)) {
-			return msg.send(
+			return msg.channel.send(
 				`Specify a valid trip length for example \`${msg.cmdPrefix}aerialfish 10\` will send you out on a 10 minute trip.`
 			);
 		}
@@ -106,8 +108,10 @@ export default class extends BotCommand {
 		let tripLength = Time.Minute * tripTime;
 
 		if (tripLength > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower trip length. The highest amount of minutes you can send out is ${Math.floor(
 					maxTripLength / Time.Minute
@@ -119,15 +123,15 @@ export default class extends BotCommand {
 		const quantity = tripLength / (randValue * Time.Second);
 		const duration = quantity * (randValue * Time.Second) * xpBoost;
 
-		await addSubTaskToActivityTask<AerialFishingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<AerialFishingActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.AerialFishing
+			type: Activity.AerialFishing,
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now doing Aerial fishing, it will take around ${formatDuration(
@@ -137,75 +141,89 @@ export default class extends BotCommand {
 	}
 
 	@requiresMinion
-	async buy(msg: KlasaMessage, [itemName = '']: [string]) {
+	async buy(msg: KlasaMessage, [itemName = ""]: [string]) {
 		const buyable = buyables.find(
-			i =>
+			(i) =>
 				stringMatches(itemName, i.item.name) ||
-				i.aliases.some(alias => stringMatches(alias, itemName))
+				i.aliases.some((alias) => stringMatches(alias, itemName))
 		);
 
 		if (!buyable) {
-			return msg.send(
+			return msg.channel.send(
 				`Here are the items you can buy: \n\n${buyables
-					.map(i => `**${i.item.name}:** ${i.cost} Molch pearls`)
-					.join('\n')}.`
+					.map((i) => `**${i.item.name}:** ${i.cost} Molch pearls`)
+					.join("\n")}.`
 			);
 		}
 		await msg.author.settings.sync(true);
 		const bank = msg.author.bank();
-		const amountPearlsHas = bank.amount('Molch pearl');
+		const amountPearlsHas = bank.amount("Molch pearl");
 		if (amountPearlsHas === 0) {
-			return msg.send(
-				await chatHeadImage({
-					content: `You have no Molch pearls, but here is a joke... \nWhere do fish keep their money? \nIn a riverbank. Hehe!`,
-					head: 'alry'
-				})
-			);
+			return msg.channel.send({
+				files: [
+					await chatHeadImage({
+						content:
+							"You have no Molch pearls, but here is a joke... \nWhere do fish keep their money? \nIn a riverbank. Hehe!",
+						head: "alry",
+					}),
+				],
+			});
 		}
 		if (amountPearlsHas < buyable.cost) {
-			return msg.send(
-				await chatHeadImage({
-					content: `You don't have enough Molch pearls.`,
-					head: 'alry'
-				})
-			);
+			return msg.channel.send({
+				files: [
+					await chatHeadImage({
+						content: "You don't have enough Molch pearls.",
+						head: "alry",
+					}),
+				],
+			});
 		}
-		await msg.author.removeItemFromBank(itemID('Molch pearl'), buyable.cost);
+		await msg.author.removeItemsFromBank(
+			new Bank().add("Molch pearl", buyable.cost)
+		);
 		await msg.author.addItemsToBank({ [buyable.item.id]: 1 }, true);
-		return msg.send(
+		return msg.channel.send(
 			`Successfully purchased 1x ${buyable.item.name} for ${buyable.cost}x Molch pearls.`
 		);
 	}
 
 	@requiresMinion
-	async sell(msg: KlasaMessage, [itemName = '']: [string]) {
+	async sell(msg: KlasaMessage, [itemName = ""]: [string]) {
 		const sellable = sellables.find(
-			i =>
+			(i) =>
 				stringMatches(itemName, i.item.name) ||
-				i.aliases.some(alias => stringMatches(alias, itemName))
+				i.aliases.some((alias) => stringMatches(alias, itemName))
 		);
 
 		if (!sellable) {
-			return msg.send(
+			return msg.channel.send(
 				`Here are the items you can sell: \n\n${sellables
-					.map(i => `**${i.item.name}:** ${i.cost} Molch pearls`)
-					.join('\n')}.`
+					.map((i) => `**${i.item.name}:** ${i.cost} Molch pearls`)
+					.join("\n")}.`
 			);
 		}
 		await msg.author.settings.sync(true);
 		const bank = msg.author.bank();
 		const amount = bank.amount(sellable.item.name);
 		if (amount < 1) {
-			return msg.send(
-				await chatHeadImage({
-					content: `You have no ${sellable.item.name}.`,
-					head: 'alry'
-				})
-			);
+			return msg.channel.send({
+				files: [
+					await chatHeadImage({
+						content: `You have no ${sellable.item.name}.`,
+						head: "alry",
+					}),
+				],
+			});
 		}
-		await msg.author.removeItemFromBank(sellable.item.id, 1);
-		await msg.author.addItemsToBank({ [itemID('Molch pearl')]: sellable.cost }, true);
-		return msg.send(
+		await msg.author.removeItemsFromBank(
+			new Bank().add(sellable.item.id, 1)
+		);
+		await msg.author.addItemsToBank(
+			{ [itemID("Molch pearl")]: sellable.cost },
+			true
+		);
+		return msg.channel.send(
 			`Successfully sold 1x ${sellable.item.name} for ${sellable.cost}x Molch pearls.`
 		);
 	}

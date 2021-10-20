@@ -18,10 +18,14 @@ export default class extends Task {
 
 		const loot = new Bank();
 
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		let baseXP = (25_000 / (Time.Minute * 60)) * duration;
 		let xp = randomVariation(baseXP, 5);
-		const xpRes = await user.addXP(SkillsEnum.Magic, xp, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Magic,
+			amount: xp,
+			duration
+		});
 		const pizazzPoints = Math.floor((pizazzPointsPerHour / (Time.Minute * 60)) * duration);
 		const newUser = await getNewUser(userID);
 		newUser.PizazzPoints += pizazzPoints;
@@ -35,7 +39,7 @@ export default class extends Task {
 			channelID,
 			str,
 			res => {
-				user.log(`continued mta`);
+				user.log('continued mta');
 				// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 				// @ts-ignore
 				return this.client.commands.get('mta')!.train(res, []);

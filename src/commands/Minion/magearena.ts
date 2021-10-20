@@ -1,15 +1,20 @@
-import { CommandStore, KlasaMessage } from 'klasa';
-import { Bank } from 'oldschooljs';
+import { CommandStore, KlasaMessage } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { GearSetupTypes } from '../../lib/gear';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import removeFoodFromUser from '../../lib/minions/functions/removeFoodFromUser';
-import { SkillsEnum } from '../../lib/skilling/types';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { ActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, randomVariation } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { GearSetupTypes } from "../../lib/gear";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import removeFoodFromUser from "../../lib/minions/functions/removeFoodFromUser";
+import { ClientSettings } from "../../lib/settings/types/ClientSettings";
+import { SkillsEnum } from "../../lib/skilling/types";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { ActivityTaskOptions } from "../../lib/types/minions";
+import {
+	formatDuration,
+	randomVariation,
+	updateBankSetting,
+} from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -17,10 +22,10 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			description: 'Sends your minion to do the Mage Arena',
-			examples: ['+magearena'],
-			categoryFlags: ['minion', 'minigame'],
-			aliases: []
+			description: "Sends your minion to do the Mage Arena",
+			examples: ["+magearena"],
+			categoryFlags: ["minion", "minigame"],
+			aliases: [],
 		});
 	}
 
@@ -28,15 +33,17 @@ export default class extends BotCommand {
 	@minionNotBusy
 	async run(msg: KlasaMessage) {
 		if (msg.author.skillLevel(SkillsEnum.Magic) < 60) {
-			return msg.channel.send(`You need level 60 Magic to do the Mage Arena.`);
+			return msg.channel.send(
+				"You need level 60 Magic to do the Mage Arena."
+			);
 		}
 		const duration = randomVariation(Time.Minute * 10, 5) * xpBoost;
 
 		const itemsNeeded = new Bank({
-			'Blood rune': 100,
-			'Air rune': 500,
-			'Fire rune': 500,
-			'Prayer potion(4)': 2
+			"Blood rune": 100,
+			"Air rune": 500,
+			"Fire rune": 500,
+			"Prayer potion(4)": 2,
 		});
 
 		if (!msg.author.owns(itemsNeeded)) {
@@ -45,30 +52,38 @@ export default class extends BotCommand {
 			);
 		}
 
-		const [, foodRemoved] = await removeFoodFromUser({
+		const { foodRemoved } = await removeFoodFromUser({
 			client: this.client,
 			user: msg.author,
 			totalHealingNeeded: 20 * 23,
 			healPerAction: 20 * 23,
-			activityName: 'Mage Arena',
-			attackStylesUsed: [GearSetupTypes.Mage]
+			activityName: "Mage Arena",
+			attackStylesUsed: ["mage"],
 		});
+
+		const totalCost = itemsNeeded.clone().add(foodRemoved);
 
 		await msg.author.removeItemsFromBank(itemsNeeded);
 
-		await addSubTaskToActivityTask<ActivityTaskOptions>(this.client, {
+		updateBankSetting(
+			this.client,
+			ClientSettings.EconomyStats.MageArenaCost,
+			totalCost
+		);
+
+		await addSubTaskToActivityTask<ActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			duration,
-			type: Activity.MageArena
+			type: Activity.MageArena,
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now doing the Mage Arena, it will take approximately ${formatDuration(
 				duration
-			)}. Removed ${itemsNeeded.add(foodRemoved)} from your bank.`
+			)}. Removed ${totalCost} from your bank.`
 		);
 	}
 }

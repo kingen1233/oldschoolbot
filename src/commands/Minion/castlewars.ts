@@ -1,12 +1,12 @@
-import { CommandStore, KlasaMessage } from 'klasa';
+import { CommandStore, KlasaMessage } from "klasa";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { getMinigameEntity } from '../../lib/settings/settings';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { MinigameActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { getMinigameEntity } from "../../lib/settings/settings";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { MinigameActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class CastleWarsCommand extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -14,19 +14,21 @@ export default class CastleWarsCommand extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			description: 'Sends your minion to play Castle Wars.',
-			usage: '[play] [name:str]',
-			examples: ['+cw'],
-			categoryFlags: ['minion', 'minigame'],
+			description: "Sends your minion to play Castle Wars.",
+			usage: "[play] [name:str]",
+			examples: ["+cw"],
+			categoryFlags: ["minion", "minigame"],
 			subcommands: true,
-			aliases: ['cw']
+			aliases: ["cw"],
 		});
 	}
 
 	async run(msg: KlasaMessage) {
 		const bank = msg.author.bank();
 		const kc = await getMinigameEntity(msg.author.id);
-		return msg.send(`You have **${bank.amount('Castle wars ticket')}** Castle wars tickets.
+		return msg.channel.send(`You have **${bank.amount(
+			"Castle wars ticket"
+		)}** Castle wars tickets.
 You have played ${kc.CastleWars} Castle Wars games.`);
 	}
 
@@ -34,19 +36,21 @@ You have played ${kc.CastleWars} Castle Wars games.`);
 	@minionNotBusy
 	async play(msg: KlasaMessage) {
 		const gameLength = Time.Minute * 18;
-		const quantity = Math.floor(msg.author.maxTripLength(Activity.CastleWars) / gameLength);
+		const quantity = Math.floor(
+			msg.author.maxTripLength(Activity.CastleWars) / gameLength
+		);
 		const duration = quantity * gameLength * xpBoost;
 
-		await addSubTaskToActivityTask<MinigameActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<MinigameActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			duration,
 			type: Activity.CastleWars,
 			quantity,
-			minigameID: 'CastleWars'
+			minigameID: "CastleWars",
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now doing ${quantity} games of Castle Wars. The trip will take around ${formatDuration(

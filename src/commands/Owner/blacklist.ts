@@ -26,18 +26,16 @@ export default class extends BotCommand {
 		this.client.settings.update(key, userOrGuild.id, {
 			arrayAction: alreadyBlacklisted ? ArrayActions.Remove : ArrayActions.Add
 		});
-		const emoji = getSupportGuild(this.client).emojis.random().toString();
+		const emoji = getSupportGuild(this.client).emojis.cache.random().toString();
 		const name = 'name' in userOrGuild ? userOrGuild.name : userOrGuild.username;
 		const newStatus = `${alreadyBlacklisted ? 'un' : ''}blacklisted`;
 
-		const channel = this.client.channels.get(Channel.BlacklistLogs);
+		const channel = this.client.channels.cache.get(Channel.BlacklistLogs);
 		if (channelIsSendable(channel)) {
 			channel.send(
-				`${toTitleCase(type)} \`${name}\` was ${newStatus} by ${
-					msg.author.username
-				} for \`${reason}\`.`
+				`${toTitleCase(type)} \`${name}\` was ${newStatus} by ${msg.author.username} for \`${reason}\`.`
 			);
 		}
-		return msg.send(`${emoji} Successfully ${newStatus} ${type} ${name}.`);
+		return msg.channel.send(`${emoji} Successfully ${newStatus} ${type} ${name}.`);
 	}
 }

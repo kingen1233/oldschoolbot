@@ -1,5 +1,6 @@
+import { Time } from 'e';
+
 import { client } from '../../..';
-import { Time } from '../../constants';
 import { BotCommand } from '../../structures/BotCommand';
 import { FastifyServer } from '../types';
 
@@ -15,12 +16,7 @@ export const commandsRoute = (server: FastifyServer) =>
 			);
 			reply.send(
 				commands
-					.filter(
-						c =>
-							typeof c.description === 'string' &&
-							c.description.length > 1 &&
-							c.permissionLevel < 9
-					)
+					.filter(c => typeof c.description === 'string' && c.description.length > 1 && c.permissionLevel < 9)
 					.map((cmd: BotCommand) => ({
 						name: cmd.name,
 						desc: cmd.description,

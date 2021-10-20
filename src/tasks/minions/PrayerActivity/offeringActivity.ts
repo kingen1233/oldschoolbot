@@ -9,7 +9,7 @@ import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: OfferingActivityTaskOptions) {
 		const { boneID, quantity, userID, channelID } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		const currentLevel = user.skillLevel(SkillsEnum.Prayer);
 
 		const bone = Prayer.Bones.find(bone => bone.inputId === boneID);
@@ -41,7 +41,7 @@ export default class extends Task {
 
 		const xpReceived = newQuantity * bone.xp * XPMod;
 
-		await user.addXP(SkillsEnum.Prayer, xpReceived);
+		await user.addXP({ skillName: SkillsEnum.Prayer, amount: xpReceived });
 		const newLevel = user.skillLevel(SkillsEnum.Prayer);
 
 		let str = `${user}, ${user.minionName} finished offering ${newQuantity} ${

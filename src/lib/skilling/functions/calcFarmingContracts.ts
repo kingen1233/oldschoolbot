@@ -1,6 +1,6 @@
 import { KlasaUser } from 'klasa';
 
-import { rand } from '../../../lib/util';
+import { rand, stringMatches } from '../../../lib/util';
 import { PlantTier } from '../../minions/farming/types';
 import { SkillsEnum } from '../types';
 
@@ -81,18 +81,19 @@ const hardPlants: PlantsList = [
 
 export function getPlantToGrow(
 	user: KlasaUser,
-	contractLevel: 'easy' | 'medium' | 'hard'
+	{ contractLevel, ignorePlant }: { contractLevel: 'easy' | 'medium' | 'hard'; ignorePlant: string | null }
 ): [string, PlantTier] {
 	const farmingLevel = user.skillLevel(SkillsEnum.Farming);
 	let contractType: PlantsList = [];
-	if (contractLevel === 'easy') contractType = easyPlants;
-	if (contractLevel === 'medium') contractType = mediumPlants;
-	if (contractLevel === 'hard') contractType = hardPlants;
+	if (contractLevel === 'easy') contractType = [...easyPlants];
+	if (contractLevel === 'medium') contractType = [...mediumPlants];
+	if (contractLevel === 'hard') contractType = [...hardPlants];
 
 	for (let i = contractType.length; i > 0; i--) {
-		const [farmingLevelNeeded] = contractType[i - 1];
+		const [farmingLevelNeeded, plantName] = contractType[i - 1];
 		const index = contractType[i - 1];
-		if (farmingLevel < farmingLevelNeeded) contractType.splice(contractType.indexOf(index), 1);
+		if (farmingLevel < farmingLevelNeeded || stringMatches(ignorePlant ?? '', plantName))
+			contractType.splice(contractType.indexOf(index), 1);
 	}
 
 	const plantFromContract = contractType[rand(0, contractType.length - 1)];

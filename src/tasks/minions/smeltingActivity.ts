@@ -11,7 +11,7 @@ import itemID from '../../lib/util/itemID';
 export default class extends Task {
 	async run(data: SmeltingActivityTaskOptions) {
 		let { barID, quantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const bar = Smithing.Bars.find(bar => bar.id === barID)!;
 
@@ -33,7 +33,11 @@ export default class extends Task {
 			xpReceived = quantity * 56.2;
 		}
 
-		const xpRes = await user.addXP(SkillsEnum.Smithing, xpReceived, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Smithing,
+			amount: xpReceived,
+			duration
+		});
 
 		let str = `${user}, ${user.minionName} finished smelting ${quantity}x ${bar.name}. ${xpRes}`;
 

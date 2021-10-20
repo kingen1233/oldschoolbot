@@ -14,8 +14,8 @@ import { Bank } from 'oldschooljs';
 import { ChambersOfXericOptions } from 'oldschooljs/dist/simulation/minigames/ChambersOfXeric';
 
 import { constructGearSetup, GearStats } from '../gear';
-import { sumOfSetupStats } from '../gear/functions/sumOfSetupStats';
 import { SkillsEnum } from '../skilling/types';
+import { Gear } from '../structures/Gear';
 import { Skills } from '../types';
 import { randomVariation, skillsMeetRequirements } from '../util';
 import getOSItem from '../util/getOSItem';
@@ -55,10 +55,10 @@ export async function createTeam(
 		const { total } = calculateUserGearPercents(u);
 		let deathChance = 20;
 		if (total < 30) {
-			points = 1_000;
+			points = 1000;
 			deathChance += 20;
 		} else if (total < 50) {
-			points = 5_000;
+			points = 5000;
 			deathChance += 10;
 		} else {
 			points = increaseNumByPercent(points, total / 10);
@@ -75,9 +75,7 @@ export async function createTeam(
 		deathChance -= calcPercentOfNum(kcPercent, 10);
 
 		if (users.length > 1) {
-			points -=
-				Math.min(6, Math.max(3, users.length)) *
-				Math.min(1600, calcPercentOfNum(15, points));
+			points -= Math.min(6, Math.max(3, users.length)) * Math.min(1600, calcPercentOfNum(15, points));
 		} else {
 			deathChance += 5;
 		}
@@ -157,21 +155,21 @@ function calcSetupPercent(
 
 export const maxMageGear = constructGearSetup({
 	head: 'Ancestral hat',
-	neck: 'Amulet of fury',
+	neck: 'Occult necklace',
 	body: 'Ancestral robe top',
-	cape: 'Saradomin cape',
-	hands: 'Barrows gloves',
+	cape: 'Imbued saradomin cape',
+	hands: 'Tormented bracelet',
 	legs: 'Ancestral robe bottom',
 	feet: 'Eternal boots',
 	weapon: 'Harmonised nightmare staff',
 	shield: 'Arcane spirit shield',
 	ring: 'Seers ring(i)'
 });
-const maxMageSum = sumOfSetupStats(maxMageGear);
+const maxMage = new Gear(maxMageGear);
 
 export const maxRangeGear = constructGearSetup({
 	head: 'Armadyl helmet',
-	neck: 'Amulet of fury',
+	neck: 'Necklace of anguish',
 	body: 'Armadyl chestplate',
 	cape: "Ava's assembler",
 	hands: 'Barrows gloves',
@@ -181,40 +179,40 @@ export const maxRangeGear = constructGearSetup({
 	ring: 'Archers ring(i)',
 	ammo: 'Dragon arrow'
 });
-const maxRangeSum = sumOfSetupStats(maxRangeGear);
+const maxRange = new Gear(maxRangeGear);
 
 export const maxMeleeGear = constructGearSetup({
 	head: "Inquisitor's great helm",
-	neck: 'Amulet of fury',
+	neck: 'Amulet of torture',
 	body: "Inquisitor's hauberk",
-	cape: 'Fire cape',
-	hands: 'Barrows gloves',
+	cape: 'Infernal cape',
+	hands: 'Ferocious gloves',
 	legs: "Inquisitor's plateskirt",
-	feet: 'Spiked manacles',
+	feet: 'Primordial boots',
 	weapon: "Inquisitor's mace",
 	shield: 'Dragon defender',
 	ring: 'Berserker ring(i)'
 });
-const maxMeleeSum = sumOfSetupStats(maxMeleeGear);
+const maxMelee = new Gear(maxMeleeGear);
 
 export function calculateUserGearPercents(user: KlasaUser) {
 	const melee = calcSetupPercent(
-		maxMeleeSum,
-		sumOfSetupStats(user.getGear('melee')),
+		maxMelee.stats,
+		user.getGear('melee').stats,
 		'melee_strength',
 		['attack_stab', 'attack_slash', 'attack_crush', 'attack_ranged', 'attack_magic'],
 		true
 	);
 	const range = calcSetupPercent(
-		maxRangeSum,
-		sumOfSetupStats(user.getGear('range')),
+		maxRange.stats,
+		user.getGear('range').stats,
 		'ranged_strength',
 		['attack_stab', 'attack_slash', 'attack_crush', 'attack_magic'],
 		false
 	);
 	const mage = calcSetupPercent(
-		maxMageSum,
-		sumOfSetupStats(user.getGear('mage')),
+		maxMage.stats,
+		user.getGear('mage').stats,
 		'magic_damage',
 		['attack_stab', 'attack_slash', 'attack_crush', 'attack_ranged'],
 		false
@@ -250,7 +248,7 @@ export async function checkCoxTeam(users: KlasaUser[], cm: boolean): Promise<str
 	for (const user of users) {
 		const { total } = calculateUserGearPercents(user);
 		if (total < 20) {
-			return `Your gear is terrible! You do not stand a chance in the Chamber's of Xeric.`;
+			return "Your gear is terrible! You do not stand a chance in the Chamber's of Xeric.";
 		}
 		if (!hasMinRaidsRequirements(user)) {
 			return `${user.username} doesn't meet the stat requirements to do the Chamber's of Xeric.`;
@@ -289,7 +287,7 @@ async function kcEffectiveness(u: KlasaUser, challengeMode: boolean, isSolo: boo
 	return kcEffectiveness;
 }
 
-const speedReductionForGear = 15;
+const speedReductionForGear = 16;
 const speedReductionForKC = 40;
 const totalSpeedReductions = speedReductionForGear + speedReductionForKC + 10 + 5;
 const baseDuration = Time.Minute * 83;
@@ -327,7 +325,11 @@ const itemBoosts = [
 	[
 		{
 			item: getOSItem('Twisted bow'),
-			boost: 10
+			boost: 9
+		},
+		{
+			item: getOSItem('Bow of faerdhinen (c)'),
+			boost: 7
 		},
 		{
 			item: getOSItem('Dragon hunter crossbow'),
@@ -337,7 +339,7 @@ const itemBoosts = [
 	[
 		{
 			item: getOSItem('Dragon warhammer'),
-			boost: 5
+			boost: 4
 		},
 		{
 			item: getOSItem('Bandos godsword'),
@@ -346,6 +348,12 @@ const itemBoosts = [
 		{
 			item: getOSItem('Bandos godsword (or)'),
 			boost: 2.5
+		}
+	],
+	[
+		{
+			item: getOSItem('Dragon hunter lance'),
+			boost: 4
 		}
 	]
 ];

@@ -1,20 +1,13 @@
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
 
-import { BitField, Events, Time } from '../../lib/constants';
+import { BitField, Events } from '../../lib/constants';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
-import {
-	addBanks,
-	bankHasAllItemsFromBank,
-	formatSkillRequirements,
-	removeBankFromBank,
-	skillsMeetRequirements,
-	stringMatches,
-	toKMB
-} from '../../lib/util';
+import { addBanks, formatSkillRequirements, skillsMeetRequirements, stringMatches, toKMB } from '../../lib/util';
 import getUsersPerkTier from '../../lib/util/getUsersPerkTier';
+import resolveItems from '../../lib/util/resolveItems';
 import BankImageTask from '../../tasks/bankImage';
 
 export default class extends BotCommand {
@@ -34,24 +27,22 @@ export default class extends BotCommand {
 		const selectedImage = bankImages.find(img => stringMatches(img.name, name));
 
 		if (!selectedImage) {
-			return msg.send(
-				`The following bank images exist: ${bankImages.map(img => img.name).join(', ')}`
-			);
+			return msg.channel.send(`The following bank images exist: ${bankImages.map(img => img.name).join(', ')}`);
 		}
 
 		if (msg.author.settings.get(UserSettings.BankBackground) === selectedImage.id) {
-			return msg.send(`This is already your bank background.`);
+			return msg.channel.send('This is already your bank background.');
 		}
 
 		if (msg.author.settings.get(UserSettings.BitField).includes(BitField.isModerator)) {
 			await msg.author.settings.update(UserSettings.BankBackground, selectedImage.id);
-			return msg.send(`Your bank background is now **${selectedImage.name}**!`);
+			return msg.channel.send(`Your bank background is now **${selectedImage.name}**!`);
 		}
 
 		if (selectedImage.sacValueRequired) {
 			const sac = msg.author.settings.get(UserSettings.SacrificedValue);
 			if (sac < selectedImage.sacValueRequired) {
-				return msg.send(
+				return msg.channel.send(
 					`You have to have sacrificed atleast ${toKMB(
 						selectedImage.sacValueRequired
 					)} GP worth of items to use this background.`
@@ -62,7 +53,7 @@ export default class extends BotCommand {
 		if (selectedImage.skillsNeeded) {
 			const meets = skillsMeetRequirements(msg.author.rawSkills, selectedImage.skillsNeeded);
 			if (!meets) {
-				return msg.send(
+				return msg.channel.send(
 					`You don't meet the skill requirements to use this background, you need: ${formatSkillRequirements(
 						selectedImage.skillsNeeded
 					)}.`
@@ -71,25 +62,19 @@ export default class extends BotCommand {
 		}
 
 		if (!selectedImage.available) {
-			return msg.send(`This image is not currently available.`);
+			return msg.channel.send('This image is not currently available.');
 		}
 
 		if (
 			selectedImage.bitfield &&
 			!msg.author.settings.get(UserSettings.BitField).includes(selectedImage.bitfield)
 		) {
-			return msg.send(`You're not elligible to use this bank background.`);
+			return msg.channel.send("You're not elligible to use this bank background.");
 		}
 
 		// Check they have required collection log items.
-		if (
-			selectedImage.collectionLogItemsNeeded &&
-			!bankHasAllItemsFromBank(
-				msg.author.collectionLog,
-				selectedImage.collectionLogItemsNeeded
-			)
-		) {
-			return msg.send(
+		if (selectedImage.collectionLogItemsNeeded && !msg.author.cl().has(selectedImage.collectionLogItemsNeeded)) {
+			return msg.channel.send(
 				`You're not worthy to use this background. You need these items in your Collection Log: ${new Bank(
 					selectedImage.collectionLogItemsNeeded
 				)}`
@@ -97,15 +82,22 @@ export default class extends BotCommand {
 		}
 
 		// Check they have the required perk tier.
-		if (
-			selectedImage.perkTierNeeded &&
-			getUsersPerkTier(msg.author) < selectedImage.perkTierNeeded
-		) {
-			return msg.send(
-				`This background is only available for Tier ${
-					Number(selectedImage.perkTierNeeded) - 1
-				} patrons.`
+		if (selectedImage.perkTierNeeded && getUsersPerkTier(msg.author) < selectedImage.perkTierNeeded) {
+			return msg.channel.send(
+				`This background is only available for Tier ${Number(selectedImage.perkTierNeeded) - 1} patrons.`
 			);
+		}
+
+		if (selectedImage.name === 'Pets') {
+			const cl = msg.author.cl();
+			const hasPet = resolveItems(['Rocky', 'Bloodhound', 'Giant squirrel', 'Baby chinchompa']).some(id =>
+				cl.has(id)
+			);
+			if (!hasPet) {
+				return msg.channel.send(
+					'You need to have one of these pets to purchase the Pets background: Rocky, Bloodhound, Giant squirrel, Baby chinchompa.'
+				);
+			}
 		}
 
 		/**
@@ -113,14 +105,11 @@ export default class extends BotCommand {
 		 */
 		if (selectedImage.gpCost || selectedImage.itemCost) {
 			await msg.author.settings.sync(true);
-			const userBank = msg.author.settings.get(UserSettings.Bank);
+			const userBank = msg.author.bank();
 
 			// Ensure they have the required items.
-			if (
-				selectedImage.itemCost &&
-				!bankHasAllItemsFromBank(userBank, selectedImage.itemCost)
-			) {
-				return msg.send(
+			if (selectedImage.itemCost && !userBank.has(selectedImage.itemCost)) {
+				return msg.channel.send(
 					`You don't have the required items to purchase this background. You need: ${new Bank(
 						selectedImage.itemCost
 					)}.`
@@ -128,17 +117,14 @@ export default class extends BotCommand {
 			}
 
 			// Ensure they have the required GP.
-			if (
-				selectedImage.gpCost &&
-				msg.author.settings.get(UserSettings.GP) < selectedImage.gpCost
-			) {
-				return msg.send(
+			if (selectedImage.gpCost && msg.author.settings.get(UserSettings.GP) < selectedImage.gpCost) {
+				return msg.channel.send(
 					`You need ${selectedImage.gpCost.toLocaleString()} GP to purchase this background.`
 				);
 			}
 
 			// Start building a string to show to the user.
-			let str = `${msg.author}, say \`confirm\` to confirm that you want to buy the **${selectedImage.name}** bank background for: `;
+			let str = `${msg.author}, please confirm that you want to buy the **${selectedImage.name}** bank background for: `;
 
 			// If theres an item cost or GP cost, add it to the string to show users the cost.
 			if (selectedImage.itemCost) {
@@ -150,31 +136,13 @@ export default class extends BotCommand {
 				str += `${selectedImage.gpCost.toLocaleString()} GP.`;
 			}
 
-			str += ` **Note:** You'll have to pay this cost again if you switch to another background and want this one again.`;
+			str +=
+				" **Note:** You'll have to pay this cost again if you switch to another background and want this one again.";
 
-			const confirmMsg = await msg.channel.send(str);
-
-			// Confirm the user wants to buy the bg
-			try {
-				await msg.channel.awaitMessages(
-					_msg =>
-						_msg.author.id === msg.author.id &&
-						_msg.content.toLowerCase() === 'confirm',
-					{
-						max: 1,
-						time: Time.Second * 15,
-						errors: ['time']
-					}
-				);
-			} catch (err) {
-				return confirmMsg.edit(`Cancelling purchase.`);
-			}
+			await msg.confirm(str);
 
 			if (selectedImage.itemCost) {
-				await msg.author.settings.update(
-					UserSettings.Bank,
-					removeBankFromBank(userBank, selectedImage.itemCost)
-				);
+				await msg.author.removeItemsFromBank(selectedImage.itemCost);
 			}
 
 			if (selectedImage.gpCost) {
@@ -197,6 +165,6 @@ export default class extends BotCommand {
 			])
 		);
 
-		return msg.send(`Your bank background is now **${selectedImage.name}**!`);
+		return msg.channel.send(`Your bank background is now **${selectedImage.name}**!`);
 	}
 }

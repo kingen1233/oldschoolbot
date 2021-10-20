@@ -1,3 +1,4 @@
+import { reduceNumByPercent } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 
 import { Activity, xpBoost } from '../../lib/constants';
@@ -6,36 +7,19 @@ import Mining from '../../lib/skilling/skills/mining';
 import { SkillsEnum } from '../../lib/skilling/types';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { MiningActivityTaskOptions } from '../../lib/types/minions';
-import {
-	determineScaledOreTime,
-	formatDuration,
-	itemNameFromID,
-	reduceNumByPercent,
-	stringMatches
-} from '../../lib/util';
+import { determineScaledOreTime, formatDuration, itemNameFromID, stringMatches } from '../../lib/util';
 import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
 import itemID from '../../lib/util/itemID';
-import resolveItems from '../../lib/util/resolveItems';
 
 const pickaxes = [
-	{
-		id: itemID('3rd age pickaxe'),
-		reductionPercent: 11,
-		miningLvl: 61
-	},
 	{
 		id: itemID('Crystal pickaxe'),
 		reductionPercent: 11,
 		miningLvl: 71
 	},
 	{
-		id: itemID('Gilded pickaxe'),
-		reductionPercent: 11,
-		miningLvl: 41
-	},
-	{
 		id: itemID('Infernal pickaxe'),
-		reductionPercent: 10,
+		reductionPercent: 6,
 		miningLvl: 61
 	},
 	{
@@ -60,31 +44,13 @@ const gloves = [
 	}
 ];
 
-const gloryAmulets = resolveItems([
-	'Amulet of eternal glory',
-	'Amulet of glory (t)',
-	'Amulet of glory (t6)',
-	'Amulet of glory (t5)',
-	'Amulet of glory (t4)',
-	'Amulet of glory (t3)',
-	'Amulet of glory (t2)',
-	'Amulet of glory (t1)',
-	'Amulet of glory',
-	'Amulet of glory(6)',
-	'Amulet of glory(5)',
-	'Amulet of glory(4)',
-	'Amulet of glory(3)',
-	'Amulet of glory(2)',
-	'Amulet of glory(1)'
-]);
-
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
 		super(store, file, directory, {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '<quantity:int{1}|name:...string> [name:...string]',
+			usage: '[quantity:int{1}] [name:...string]',
 			usageDelim: ' ',
 			categoryFlags: ['minion', 'skilling'],
 			description: 'Sends your minion to go mining.',
@@ -94,36 +60,23 @@ export default class extends BotCommand {
 
 	@minionNotBusy
 	@requiresMinion
-	async run(msg: KlasaMessage, [quantity, name = '']: [null | number | string, string]) {
-		if (typeof quantity === 'string') {
-			name = quantity;
-			quantity = null;
-		}
-
+	async run(msg: KlasaMessage, [quantity = null, name = '']: [null | number, string]) {
 		const ore = Mining.Ores.find(
 			ore => stringMatches(ore.name, name) || stringMatches(ore.name.split(' ')[0], name)
 		);
 
 		if (!ore) {
-			return msg.send(
-				`Thats not a valid ore to mine. Valid ores are ${Mining.Ores.map(
-					ore => ore.name
-				).join(', ')}.`
+			return msg.channel.send(
+				`Thats not a valid ore to mine. Valid ores are ${Mining.Ores.map(ore => ore.name).join(', ')}.`
 			);
 		}
 
 		if (msg.author.skillLevel(SkillsEnum.Mining) < ore.level) {
-			return msg.send(
-				`${msg.author.minionName} needs ${ore.level} Mining to mine ${ore.name}.`
-			);
+			return msg.channel.send(`${msg.author.minionName} needs ${ore.level} Mining to mine ${ore.name}.`);
 		}
 
 		// Calculate the time it takes to mine a single ore of this type, at this persons level.
-		let timeToMine = determineScaledOreTime(
-			ore!.xp,
-			ore.respawnTime,
-			msg.author.skillLevel(SkillsEnum.Mining)
-		);
+		let timeToMine = determineScaledOreTime(ore!.xp, ore.respawnTime, msg.author.skillLevel(SkillsEnum.Mining));
 
 		// For each pickaxe, if they have it, give them its' bonus and break.
 		const boosts = [];
@@ -147,14 +100,9 @@ export default class extends BotCommand {
 			}
 		}
 		// Give gem rocks a speed increase for wearing a glory
-		if (ore.id === 1625) {
-			for (const amulet of gloryAmulets) {
-				if (msg.author.hasItemEquippedAnywhere(amulet)) {
-					timeToMine = Math.floor(timeToMine / 2);
-					boosts.push(`50% for ${itemNameFromID(amulet)}`);
-					break;
-				}
-			}
+		if (ore.id === 1625 && msg.author.hasItemEquippedAnywhere('Amulet of glory')) {
+			timeToMine = Math.floor(timeToMine / 2);
+			boosts.push('50% for having an Amulet of glory equipped');
 		}
 
 		const maxTripLength = 200984200 
@@ -166,16 +114,16 @@ export default class extends BotCommand {
 		const duration = quantity * timeToMine * xpBoost;
 
 		if (duration > maxTripLength) {
-			return msg.send(
+			return msg.channel.send(
 				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
 					maxTripLength
-				)}, try a lower quantity. The highest amount of ${
-					ore.name
-				} you can mine is ${Math.floor(maxTripLength / timeToMine)}.`
+				)}, try a lower quantity. The highest amount of ${ore.name} you can mine is ${Math.floor(
+					maxTripLength / timeToMine
+				)}.`
 			);
 		}
 
-		await addSubTaskToActivityTask<MiningActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<MiningActivityTaskOptions>({
 			oreID: ore.id,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
@@ -192,6 +140,6 @@ export default class extends BotCommand {
 			response += `\n\n **Boosts:** ${boosts.join(', ')}.`;
 		}
 
-		return msg.send(response);
+		return msg.channel.send(response);
 	}
 }

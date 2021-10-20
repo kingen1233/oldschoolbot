@@ -9,7 +9,7 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: WealthChargingActivityTaskOptions) {
 		const { quantity, userID, channelID } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		let deaths = 0;
 		let loot = new Bank();
 		for (let i = 0; i < quantity; i++) {
@@ -30,9 +30,7 @@ export default class extends Task {
 				: `${user}, ${user.minionName} finished charging ${amnt} rings of wealth.`;
 
 		if (loot.length !== 0 && deaths > 0) {
-			str += ` They died ${deaths}x times, causing the loss of ${
-				wealthInventorySize * deaths
-			} rings of wealth.`;
+			str += ` They died ${deaths}x times, causing the loss of ${wealthInventorySize * deaths} rings of wealth.`;
 		}
 
 		await user.addItemsToBank(loot.bank, true);

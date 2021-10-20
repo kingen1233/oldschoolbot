@@ -1,3 +1,4 @@
+import { reduceNumByPercent } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 
 import { Activity, xpBoost } from '../../lib/constants';
@@ -7,35 +8,19 @@ import Woodcutting from '../../lib/skilling/skills/woodcutting';
 import { SkillsEnum } from '../../lib/skilling/types';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { WoodcuttingActivityTaskOptions } from '../../lib/types/minions';
-import {
-	determineScaledLogTime,
-	formatDuration,
-	itemNameFromID,
-	reduceNumByPercent,
-	stringMatches
-} from '../../lib/util';
+import { determineScaledLogTime, formatDuration, itemNameFromID, stringMatches } from '../../lib/util';
 import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
 import itemID from '../../lib/util/itemID';
 
 const axes = [
-	{
-		id: itemID('3rd age axe'),
-		reductionPercent: 12,
-		wcLvl: 61
-	},
 	{
 		id: itemID('Crystal axe'),
 		reductionPercent: 12,
 		wcLvl: 61
 	},
 	{
-		id: itemID('Gilded axe'),
-		reductionPercent: 12,
-		wcLvl: 41
-	},
-	{
 		id: itemID('Infernal axe'),
-		reductionPercent: 11,
+		reductionPercent: 9,
 		wcLvl: 61
 	},
 	{
@@ -68,28 +53,25 @@ export default class extends BotCommand {
 		}
 
 		const log = Woodcutting.Logs.find(
-			log => stringMatches(log.name, name) || stringMatches(log.name.split(' ')[0], name)
+			log =>
+				stringMatches(log.name, name) ||
+				stringMatches(log.name.split(' ')[0], name) ||
+				log.aliases?.some(a => stringMatches(a, name))
 		);
 
 		if (!log) {
 			return msg.channel.send(
-				`That's not a valid log to chop. Valid logs are ${Woodcutting.Logs.map(
-					log => log.name
-				).join(', ')}.`
+				`That's not a valid log to chop. Valid logs are ${Woodcutting.Logs.map(log => log.name).join(', ')}.`
 			);
 		}
 
 		if (msg.author.skillLevel(SkillsEnum.Woodcutting) < log.level) {
-			return msg.send(
-				`${msg.author.minionName} needs ${log.level} Woodcutting to chop ${log.name}.`
-			);
+			return msg.channel.send(`${msg.author.minionName} needs ${log.level} Woodcutting to chop ${log.name}.`);
 		}
 
 		const QP = msg.author.settings.get(UserSettings.QP);
 		if (QP < log.qpRequired) {
-			return msg.channel.send(
-				`${msg.author.minionName} needs ${log.qpRequired} QP to cut ${log.name}.`
-			);
+			return msg.channel.send(`${msg.author.minionName} needs ${log.qpRequired} QP to cut ${log.name}.`);
 		}
 
 		// Calculate the time it takes to chop a single log of this type, at this persons level.
@@ -125,13 +107,13 @@ export default class extends BotCommand {
 			return msg.channel.send(
 				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
 					maxTripLength
-				)}, try a lower quantity. The highest amount of ${
-					log.name
-				} you can chop is ${Math.floor(maxTripLength / timetoChop)}.`
+				)}, try a lower quantity. The highest amount of ${log.name} you can chop is ${Math.floor(
+					maxTripLength / timetoChop
+				)}.`
 			);
 		}
 
-		await addSubTaskToActivityTask<WoodcuttingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<WoodcuttingActivityTaskOptions>({
 			logID: log.id,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
@@ -148,6 +130,6 @@ export default class extends BotCommand {
 			response += `\n\n**Boosts:** ${boosts.join(', ')}.`;
 		}
 
-		return msg.send(response);
+		return msg.channel.send(response);
 	}
 }

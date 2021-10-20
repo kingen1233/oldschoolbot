@@ -14,12 +14,7 @@ export function fillTextXTimesInCtx(
 	}
 }
 
-export function drawItemQuantityText(
-	ctx: CanvasRenderingContext2D,
-	quantity: number,
-	x: number,
-	y: number
-) {
+export function drawItemQuantityText(ctx: CanvasRenderingContext2D, quantity: number, x: number, y: number) {
 	const quantityColor = generateHexColorForCashStack(quantity);
 	const formattedQuantity = formatItemStackQuantity(quantity);
 	ctx.font = '16px OSRSFontCompact';
@@ -62,4 +57,28 @@ export function canvasToBufferAsync(canvas: Canvas, ...args: any[]) {
 			else resolve(buffer!);
 		}, ...args)
 	);
+}
+
+export function drawImageWithOutline(
+	ctx: CanvasRenderingContext2D,
+	image: Canvas | Image,
+	dx: number,
+	dy: number,
+	dw: number,
+	dh: number,
+	outlineColor: string,
+	outlineWidth: number = 1,
+	alpha: number = 0.5
+): void {
+	const dArr = [-1, -1, 0, -1, 1, -1, -1, 0, 1, 0, -1, 1, 0, 1, 1, 1];
+	const purplecanvas = new Canvas(image.width + (outlineWidth + 2), image.height + (outlineWidth + 2));
+	const pctx = purplecanvas.getContext('2d');
+	for (let i = 0; i < dArr.length; i += 2) pctx.drawImage(image, dArr[i] * outlineWidth, dArr[i + 1] * outlineWidth);
+	pctx.globalAlpha = alpha;
+	pctx.globalCompositeOperation = 'source-in';
+	pctx.fillStyle = outlineColor;
+	pctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+	pctx.globalCompositeOperation = 'source-over';
+	ctx.drawImage(pctx.canvas, dx, dy, dw + (outlineWidth + 2), dh + (outlineWidth + 2));
+	ctx.drawImage(image, dx, dy, dw, dh);
 }

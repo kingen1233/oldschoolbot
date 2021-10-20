@@ -1,9 +1,10 @@
-import { increaseNumByPercent, reduceNumByPercent } from 'e';
+import { increaseNumByPercent, noOp, reduceNumByPercent } from 'e';
 import { Task } from 'klasa';
 
 import { UserSettings } from '../../../lib/settings/types/UserSettings';
 import { SoulWarsOptions } from '../../../lib/types/minions';
-import { noOp, roll } from '../../../lib/util';
+import { roll } from '../../../lib/util';
+import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 import { sendToChannelID } from '../../../lib/util/webhook';
 
 function calcPoints() {
@@ -23,12 +24,13 @@ function calcPoints() {
 }
 
 export default class extends Task {
-	async run({ channelID, leader, users, quantity }: SoulWarsOptions) {
-		const leaderUser = await this.client.users.fetch(leader);
+	async run(data: SoulWarsOptions) {
+		const { channelID, leader, users, quantity } = data;
+		const leaderUser = await this.client.fetchUser(leader);
 		let str = `${leaderUser}, your party finished doing ${quantity}x games of Soul Wars.\n\n`;
 
 		for (const id of users) {
-			const user = await this.client.users.fetch(id).catch(noOp);
+			const user = await this.client.fetchUser(id).catch(noOp);
 			if (!user) continue;
 
 			let points = 0;
@@ -36,15 +38,28 @@ export default class extends Task {
 				points += calcPoints();
 			}
 
-			await user.settings.update(
-				UserSettings.ZealTokens,
-				user.settings.get(UserSettings.ZealTokens) + points
-			);
+			await user.settings.update(UserSettings.ZealTokens, user.settings.get(UserSettings.ZealTokens) + points);
 
 			user.incrementMinigameScore('SoulWars', quantity);
 			str += `${user} received ${points}x Zeal Tokens.`;
 		}
 
-		sendToChannelID(this.client, channelID, { content: str });
+		if (users.length === 1) {
+			handleTripFinish(
+				this.client,
+				leaderUser,
+				channelID,
+				str,
+				res => {
+					leaderUser.log('continued trip of killing soul wars}');
+					return this.client.commands.get('sw')!.run(res, ['solo']);
+				},
+				undefined!,
+				data,
+				null
+			);
+		} else {
+			sendToChannelID(this.client, channelID, { content: str });
+		}
 	}
 }

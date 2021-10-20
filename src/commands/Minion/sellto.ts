@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/minimal';
 import { GuildMember } from 'discord.js';
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank } from 'oldschooljs';
@@ -6,10 +7,12 @@ import { Events } from '../../lib/constants';
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
+import itemIsTradeable from '../../lib/util/itemIsTradeable';
+import { parseInputBankWithPrice } from '../../lib/util/parseStringBank';
 
 const options = {
 	max: 1,
-	time: 20000,
+	time: 20_000,
 	errors: ['time']
 };
 
@@ -17,91 +20,84 @@ export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
 		super(store, file, directory, {
 			cooldown: 3,
-			usage: '<member:member> [price:int{1,100000000000}] (items:...TradeableBank)',
+			usage: '<member:member> [strBankWithPrice:...str]',
 			usageDelim: ' ',
 			oneAtTime: true,
 			ironCantUse: true,
 			categoryFlags: ['minion'],
 			description: 'Sells items to other players for GP.',
-			examples: [
-				'+sellto @Magnaboy 1b 2 Elysian sigil',
-				'+sellto @Magnaboy 500k 1 Dragon platelegs'
-			]
+			examples: ['+sellto @Magnaboy 1b 2 Elysian sigil', '+sellto @Magnaboy 500k 1 Dragon platelegs']
 		});
 	}
 
-	async run(
-		msg: KlasaMessage,
-		[buyerMember, price, [bankToSell, totalPrice]]: [GuildMember, number, [Bank, number]]
-	) {
-		if (!price) {
-			price = 1;
+	async run(msg: KlasaMessage, [buyerMember, strBankWithPrice]: [GuildMember, string | undefined]) {
+		const { price, bank: bankToSell } = parseInputBankWithPrice({
+			usersBank: msg.author.bank(),
+			str: strBankWithPrice ?? '',
+			flags: { ...msg.flagArgs, tradeables: 'tradeables' },
+			excludeItems: msg.author.settings.get(UserSettings.FavoriteItems)
+		});
+		if (bankToSell.items().some(i => !itemIsTradeable(i[0].id))) {
+			captureException(new Error('Trying to sell untradeable item'), {
+				user: {
+					id: msg.author.id
+				},
+				extra: {
+					inputItems: strBankWithPrice ?? '',
+					resultItems: bankToSell.toString()
+				}
+			});
+			return msg.channel.send('You are trying to sell untradeable items.');
+		}
+		if (bankToSell.length === 0) {
+			return msg.channel.send('No valid tradeable items that you own were given.');
+		}
+
+		if (price < 0 || price > 100_000_000_000) {
+			return msg.channel.send('Invalid price.');
 		}
 
 		// Make sure blacklisted members can't be traded.
-		const isBlacklisted = this.client.settings
-			.get(ClientSettings.UserBlacklist)
-			.includes(buyerMember.user.id);
-		if (isBlacklisted) throw `Blacklisted players can't buy items.`;
-		if (msg.author.isIronman) throw `Iron players can't sell items.`;
-		if (buyerMember.user.isIronman) throw `Iron players can't be sold items.`;
-		if (buyerMember.user.id === msg.author.id) throw `You can't trade yourself.`;
-		if (buyerMember.user.bot) throw `You can't trade a bot.`;
+		const isBlacklisted = this.client.settings.get(ClientSettings.UserBlacklist).includes(buyerMember.user.id);
+		if (isBlacklisted) throw "Blacklisted players can't buy items.";
+		if (msg.author.isIronman) throw "Iron players can't sell items.";
+		if (buyerMember.user.isIronman) throw "Iron players can't be sold items.";
+		if (buyerMember.user.id === msg.author.id) throw "You can't trade yourself.";
+		if (buyerMember.user.bot) throw "You can't trade a bot.";
 		if (buyerMember.user.isBusy) {
-			throw `That user is busy right now.`;
+			throw 'That user is busy right now.';
 		}
 
 		await Promise.all([buyerMember.user.settings.sync(true), msg.author.settings.sync(true)]);
 
 		if (buyerMember.user.settings.get(UserSettings.GP) < price) {
-			throw `That user doesn't have enough GP :(`;
+			throw "That user doesn't have enough GP :(";
 		}
 
 		buyerMember.user.toggleBusy(true);
 		msg.author.toggleBusy(true);
 		try {
-			await this.sell(msg, buyerMember, price, [bankToSell, totalPrice]);
+			await this.sell(msg, buyerMember, price, bankToSell);
 		} finally {
 			buyerMember.user.toggleBusy(false);
 			msg.author.toggleBusy(false);
 		}
 	}
 
-	async sell(
-		msg: KlasaMessage,
-		buyerMember: GuildMember,
-		price: number,
-		[bankToSell, totalPrice]: [Bank, number]
-	) {
+	async sell(msg: KlasaMessage, buyerMember: GuildMember, price: number, bankToSell: Bank) {
 		const bankStr = bankToSell.toString();
 
-		let sellStr = `${
-			msg.author
-		}, say \`confirm\` to confirm that you want to sell ${bankStr} to \`${
+		let sellStr = `${msg.author}, please confirm that you want to sell ${bankStr} to \`${
 			buyerMember.user.username
 		}#${buyerMember.user.discriminator}\` for a *total* of ${price.toLocaleString()} GP.`;
 
-		const botPays = Math.floor(totalPrice) * 0.8;
+		const botPays = Math.floor(bankToSell.value()) * 0.8;
 
 		if (botPays > price) {
 			sellStr += `\n\nWarning: The bot would pay you more (${botPays.toLocaleString()} GP) for these items than you are selling them for!`;
 		}
 
-		if (!msg.flagArgs.confirm && !msg.flagArgs.cf) {
-			const sellMsg = await msg.channel.send(sellStr);
-
-			// Confirm the seller wants to sell
-			try {
-				await msg.channel.awaitMessages(
-					_msg =>
-						_msg.author.id === msg.author.id &&
-						_msg.content.toLowerCase() === 'confirm',
-					options
-				);
-			} catch (err) {
-				return sellMsg.edit(`Cancelling sale of ${bankToSell}.`);
-			}
-		}
+		await msg.confirm(sellStr);
 
 		// Confirm the buyer wants to buy
 		const buyerConfirmationMsg = await msg.channel.send(
@@ -111,32 +107,29 @@ export default class extends BotCommand {
 		);
 
 		try {
-			await msg.channel.awaitMessages(
-				_msg =>
-					_msg.author.id === buyerMember.user.id && _msg.content.toLowerCase() === 'buy',
-				options
-			);
+			await msg.channel.awaitMessages({
+				...options,
+				filter: _msg => _msg.author.id === buyerMember.user.id && _msg.content.toLowerCase() === 'buy'
+			});
 		} catch (err) {
 			buyerConfirmationMsg.edit(`Cancelling sale of ${bankStr}.`);
 			return msg.channel.send(`Cancelling sale of ${bankStr}.`);
 		}
 
 		try {
-			if (
-				buyerMember.user.settings.get(UserSettings.GP) < price ||
-				!msg.author.bank().fits(bankToSell)
-			) {
-				return msg.send(`One of you lacks the required GP or items to make this trade.`);
+			if (buyerMember.user.settings.get(UserSettings.GP) < price || !msg.author.bank().fits(bankToSell)) {
+				return msg.channel.send('One of you lacks the required GP or items to make this trade.');
+			}
+			if (price > 0) {
+				await buyerMember.user.removeGP(price);
+				await msg.author.addGP(price);
 			}
 
-			await buyerMember.user.removeGP(price);
-			await msg.author.addGP(price);
-
 			await msg.author.removeItemsFromBank(bankToSell.bank);
-			await buyerMember.user.addItemsToBank(bankToSell.bank);
+			await buyerMember.user.addItemsToBank(bankToSell.bank, false, false);
 		} catch (err) {
 			this.client.emit(Events.Wtf, err);
-			return msg.send(`Fatal error occurred. Please seek help in the support server.`);
+			return msg.channel.send('Fatal error occurred. Please seek help in the support server.');
 		}
 
 		this.client.emit(
@@ -148,6 +141,6 @@ export default class extends BotCommand {
 
 		msg.author.log(`sold ${bankStr} to ${buyerMember.user.sanitizedName} for ${price}`);
 
-		return msg.send(`Sale of ${bankStr} complete!`);
+		return msg.channel.send(`Sale of ${bankStr} complete!`);
 	}
 }

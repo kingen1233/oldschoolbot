@@ -1,3 +1,4 @@
+import { MessageAttachment } from 'discord.js';
 import { KlasaMessage, KlasaUser } from 'klasa';
 
 import Farming from '../../skilling/skills/farming';
@@ -54,25 +55,22 @@ export function calcVariableYield(
 }
 
 export function returnListOfPlants(msg: KlasaMessage) {
-	return msg.channel.sendFile(
+	const attachment = new MessageAttachment(
 		Buffer.from(
 			Farming.Plants.map(
 				plant =>
-					`${plant.seedType}: ${plant.name} -- lvl ${plant.level}: ${Object.entries(
-						plant.inputItems
-					)
+					`${plant.seedType}: ${plant.name} -- lvl ${plant.level}: ${Object.entries(plant.inputItems)
 						.map(entry => `${entry[1]} ${itemNameFromID(parseInt(entry[0]))}`)
 						.join(', ')}\n	Default # of patches: ${
 						plant.defaultNumOfPatches
 					}\n${plant.additionalPatchesByFarmLvl.map(
-						entry =>
-							`	| Farming Level: ${entry[0]} => Total Additional Patches: ${entry[1]} |\n`
+						entry => `	| Farming Level: ${entry[0]} => Total Additional Patches: ${entry[1]} |\n`
 					)} ${plant.additionalPatchesByQP.map(
-						entry =>
-							`	| Quest Points: ${entry[0]} => Total Additional Patches: ${entry[1]} |\n`
+						entry => `	| Quest Points: ${entry[0]} => Total Additional Patches: ${entry[1]} |\n`
 					)} `
 			).join('\n')
 		),
-		`Farming Plants.txt`
+		'Farming Plants.txt'
 	);
+	return msg.channel.send({ files: [attachment] });
 }

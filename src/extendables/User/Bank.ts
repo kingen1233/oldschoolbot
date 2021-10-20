@@ -1,19 +1,17 @@
 import { User } from 'discord.js';
+import { percentChance } from 'e';
 import { Extendable, ExtendableStore } from 'klasa';
 import { Bank } from 'oldschooljs';
+import { Item } from 'oldschooljs/dist/meta/types';
 import { O } from 'ts-toolbelt';
 
-import { Events } from '../../lib/constants';
-import SimilarItems from '../../lib/data/similarItems';
+import { blowpipeDarts, validateBlowpipeData } from '../../commands/Minion/blowpipe';
+import { projectiles } from '../../lib/constants';
 import clueTiers from '../../lib/minions/data/clueTiers';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
+import { filterLootReplace } from '../../lib/slayer/slayerUtil';
 import { ItemBank } from '../../lib/types';
-import {
-	addBanks,
-	bankHasAllItemsFromBank,
-	removeBankFromBank,
-	removeItemFromBank
-} from '../../lib/util';
+import { bankHasAllItemsFromBank, itemNameFromID, removeBankFromBank } from '../../lib/util';
 import itemID from '../../lib/util/itemID';
 
 export interface GetUserBankOptions {
@@ -48,17 +46,6 @@ export default class extends Extendable {
 		return numOwned;
 	}
 
-	public numItemsInBankSync(this: User, itemID: number, similar = false) {
-		const bank = this.settings.get(UserSettings.Bank);
-		const itemQty = typeof bank[itemID] !== 'undefined' ? bank[itemID] : 0;
-		if (similar && itemQty === 0 && SimilarItems[itemID]) {
-			for (const i of SimilarItems[itemID]) {
-				if (bank[i] && bank[i] > 0) return bank[i];
-			}
-		}
-		return itemQty;
-	}
-
 	public allItemsOwned(this: User): Bank {
 		let totalBank = this.bank({ withGP: true });
 
@@ -82,126 +69,225 @@ export default class extends Extendable {
 		await this.settings.sync(true);
 		const currentGP = this.settings.get(UserSettings.GP);
 		if (currentGP < amount) throw `${this.sanitizedName} doesn't have enough GP.`;
-		this.log(
-			`had ${amount} GP removed. BeforeBalance[${currentGP}] NewBalance[${
-				currentGP - amount
-			}]`
-		);
-		return this.queueFn(() => this.settings.update(UserSettings.GP, currentGP - amount));
+		this.log(`had ${amount} GP removed. BeforeBalance[${currentGP}] NewBalance[${currentGP - amount}]`);
+		this.settings.update(UserSettings.GP, currentGP - amount);
 	}
 
 	public async addGP(this: User, amount: number) {
 		await this.settings.sync(true);
 		const currentGP = this.settings.get(UserSettings.GP);
-		this.log(
-			`had ${amount} GP added. BeforeBalance[${currentGP}] NewBalance[${currentGP + amount}]`
-		);
-		return this.queueFn(() => this.settings.update(UserSettings.GP, currentGP + amount));
+		this.log(`had ${amount} GP added. BeforeBalance[${currentGP}] NewBalance[${currentGP + amount}]`);
+		return this.settings.update(UserSettings.GP, currentGP + amount);
 	}
 
 	public async addItemsToBank(
 		this: User,
 		inputItems: ItemBank | Bank,
-		collectionLog = false
-	): Promise<{ previousCL: ItemBank }> {
-		const _items = inputItems instanceof Bank ? { ...inputItems.bank } : inputItems;
-		await this.settings.sync(true);
+		collectionLog: boolean = false,
+		filterLoot: boolean = true
+	): Promise<{ previousCL: ItemBank; itemsAdded: ItemBank }> {
+		return this.queueFn(async user => {
+			const _items = inputItems instanceof Bank ? { ...inputItems.bank } : inputItems;
+			await this.settings.sync(true);
 
-		const previousCL = this.settings.get(UserSettings.CollectionLogBank);
+			const previousCL = user.settings.get(UserSettings.CollectionLogBank);
 
-		for (const { scrollID } of clueTiers) {
-			// If they didnt get any of this clue scroll in their loot, continue to next clue tier.
-			if (!_items[scrollID]) continue;
-			const alreadyHasThisScroll = await this.hasItem(scrollID);
-			if (alreadyHasThisScroll) {
-				// If they already have this scroll in their bank, delete it from the loot.
-				delete _items[scrollID];
-			} else {
-				// If they dont have it in their bank, reset the amount to 1 incase they got more than 1 of the clue.
-				_items[scrollID] = 1;
+			for (const { scrollID } of clueTiers) {
+				// If they didnt get any of this clue scroll in their loot, continue to next clue tier.
+				if (!_items[scrollID]) continue;
+				const alreadyHasThisScroll = user.settings.get(UserSettings.Bank)[scrollID];
+				if (alreadyHasThisScroll) {
+					// If they already have this scroll in their bank, delete it from the loot.
+					delete _items[scrollID];
+				} else {
+					// If they dont have it in their bank, reset the amount to 1 incase they got more than 1 of the clue.
+					_items[scrollID] = 1;
+				}
 			}
-		}
 
-		const items = {
-			..._items
-		};
+			let items = new Bank({
+				..._items
+			});
+			const { bankLoot, clLoot } = filterLoot
+				? filterLootReplace(user.allItemsOwned(), items)
+				: { bankLoot: items, clLoot: items };
+			items = bankLoot;
+			if (collectionLog) {
+				await user.addItemsToCollectionLog(clLoot.bank);
+			}
 
-		if (collectionLog) {
-			await this.addItemsToCollectionLog(items);
-		}
+			// Get the amount of coins in the loot and remove the coins from the items to be added to the user bank
+			const coinsInLoot = items.amount(995);
+			if (coinsInLoot > 0) {
+				await user.addGP(items.amount(995));
+				items.remove(995, items.amount(995));
+			}
 
-		if (items[995]) {
-			await this.addGP(items[995]);
-			delete items[995];
-		}
+			this.log(`Had items added to bank - ${JSON.stringify(items)}`);
+			const newBank = user.bank().add(items).bank;
 
-		this.log(`Had items added to bank - ${JSON.stringify(items)}`);
-		await this.queueFn(() =>
-			this.settings.update(
-				UserSettings.Bank,
-				addBanks([
-					items,
-					{
-						...this.settings.get(UserSettings.Bank)
-					}
-				])
-			)
-		);
+			let deleted = [];
+			for (const [key, value] of Object.entries(newBank)) {
+				if (value === 0 || value < 1) {
+					delete newBank[key];
+					deleted.push([key, value]);
+				}
+			}
+			if (deleted.length > 0) {
+				console.error(`Deleted ${JSON.stringify(deleted)} from ${this.username}`);
+			}
 
-		return {
-			previousCL
-		};
-	}
+			await this.settings.update(UserSettings.Bank, newBank);
 
-	public async removeItemFromBank(this: User, itemID: number, amountToRemove = 1) {
-		await this.settings.sync(true);
-		const bank = { ...this.settings.get(UserSettings.Bank) };
-		if (typeof bank[itemID] === 'undefined' || bank[itemID] < amountToRemove) {
-			this.client.emit(
-				Events.Wtf,
-				`${this.username}[${this.id}] [NEI] ${itemID} ${amountToRemove}`
-			);
+			// Re-add the coins to the loot
+			if (coinsInLoot > 0) items.add(995, coinsInLoot);
 
-			throw `${this.username}[${this.id}] doesn't have enough of item[${itemID}] to remove ${amountToRemove}.`;
-		}
-
-		this.log(`had Quantity[${amountToRemove}] of ItemID[${itemID}] removed from bank.`);
-		return this.queueFn(() =>
-			this.settings.update(
-				UserSettings.Bank,
-				removeItemFromBank(bank, itemID, amountToRemove)
-			)
-		);
+			return {
+				previousCL,
+				itemsAdded: items.bank
+			};
+		});
 	}
 
 	public async removeItemsFromBank(this: User, _itemBank: O.Readonly<ItemBank>) {
-		const itemBank = _itemBank instanceof Bank ? { ..._itemBank.bank } : _itemBank;
+		return this.queueFn(async user => {
+			const itemBank = _itemBank instanceof Bank ? { ..._itemBank.bank } : _itemBank;
 
-		await this.settings.sync(true);
+			await user.settings.sync(true);
 
-		const currentBank = this.settings.get(UserSettings.Bank);
-		const GP = this.settings.get(UserSettings.GP);
-		if (!bankHasAllItemsFromBank({ ...currentBank, 995: GP }, itemBank)) {
-			throw new Error(
-				`Tried to remove ${new Bank(itemBank)} from ${
-					this.username
-				} but failed because they don't own all these items.`
-			);
+			const currentBank = user.settings.get(UserSettings.Bank);
+			const GP = user.settings.get(UserSettings.GP);
+			if (!bankHasAllItemsFromBank({ ...currentBank, 995: GP }, itemBank)) {
+				throw new Error(
+					`Tried to remove ${new Bank(itemBank)} from ${
+						user.username
+					} but failed because they don't own all these items.`
+				);
+			}
+
+			const items = {
+				...itemBank
+			};
+
+			if (items[995]) {
+				await user.removeGP(items[995]);
+				delete items[995];
+			}
+
+			user.log(`Had items removed from bank - ${JSON.stringify(items)}`);
+			return user.settings.update(UserSettings.Bank, removeBankFromBank(currentBank, items));
+		});
+	}
+
+	public async specialRemoveItems(this: User, bank: Bank) {
+		const bankRemove = new Bank();
+		let dart: [Item, number] | null = null;
+		let ammoRemove: [Item, number] | null = null;
+
+		const realCost = bank.clone();
+		const rangeGear = this.getGear('range');
+		const hasAvas = rangeGear.hasEquipped("Ava's assembler");
+
+		for (const [item, quantity] of bank.items()) {
+			if (blowpipeDarts.includes(item)) {
+				if (dart !== null) throw new Error('Tried to remove more than 1 blowpipe dart.');
+				dart = [item, quantity];
+				continue;
+			}
+			if (Object.values(projectiles).flat(2).includes(item.id)) {
+				if (ammoRemove !== null) throw new Error('Tried to remove more than 1 ranged ammunition.');
+				ammoRemove = [item, quantity];
+				continue;
+			}
+			bankRemove.add(item.id, quantity);
 		}
 
-		const items = {
-			...itemBank
+		const removeFns: (() => Promise<unknown>)[] = [];
+
+		if (ammoRemove) {
+			const equippedAmmo = rangeGear.ammo?.item;
+			if (!equippedAmmo) {
+				throw new Error('No ammo equipped.');
+			}
+			if (equippedAmmo !== ammoRemove[0].id) {
+				throw new Error(`Has ${itemNameFromID(equippedAmmo)}, but needs ${ammoRemove[0].name}.`);
+			}
+			const newRangeGear = { ...this.settings.get(UserSettings.Gear.Range) };
+			const ammo = newRangeGear.ammo?.quantity;
+
+			if (hasAvas) {
+				let ammoCopy = ammoRemove[1];
+				for (let i = 0; i < ammoCopy; i++) {
+					if (percentChance(80)) {
+						ammoRemove[1]--;
+						realCost.remove(ammoRemove[0].id, 1);
+					}
+				}
+			}
+			if (!ammo || ammo < ammoRemove[1])
+				throw new Error(
+					`Not enough ${ammoRemove[0].name} equipped in range gear, you need ${
+						ammoRemove![1]
+					} but you have only ${ammo}.`
+				);
+			removeFns.push(() => {
+				newRangeGear.ammo!.quantity -= ammoRemove![1];
+				return this.settings.update(UserSettings.Gear.Range, newRangeGear);
+			});
+		}
+
+		if (dart) {
+			if (hasAvas) {
+				for (let i = 0; i < dart![1]; i++) {
+					if (percentChance(80)) {
+						realCost.remove(dart[0].id, 1);
+						dart![1]--;
+					}
+				}
+			}
+			const scales = Math.ceil((10 / 3) * dart[1]);
+			const rawBlowpipeData = this.settings.get(UserSettings.Blowpipe);
+			if (!this.owns('Toxic blowpipe') || !rawBlowpipeData) {
+				throw new Error("You don't have a Toxic blowpipe.");
+			}
+			if (!rawBlowpipeData.dartID || !rawBlowpipeData.dartQuantity) {
+				throw new Error('You have no darts in your Toxic blowpipe.');
+			}
+			if (rawBlowpipeData.dartQuantity < dart[1]) {
+				throw new Error(
+					`You don't have enough ${itemNameFromID(
+						rawBlowpipeData.dartID
+					)}s in your Toxic blowpipe, you need ${dart[1]}, but you have only ${rawBlowpipeData.dartQuantity}.`
+				);
+			}
+			if (!rawBlowpipeData.scales || rawBlowpipeData.scales < scales) {
+				throw new Error(
+					`You don't have enough Zulrah's scales in your Toxic blowpipe, you need ${scales} but you have only ${rawBlowpipeData.scales}.`
+				);
+			}
+			removeFns.push(() => {
+				const bpData = { ...this.settings.get(UserSettings.Blowpipe) };
+				bpData.dartQuantity -= dart![1];
+				bpData.scales -= scales;
+				validateBlowpipeData(bpData);
+				return this.settings.update(UserSettings.Blowpipe, bpData);
+			});
+		}
+
+		if (bankRemove.length > 0) {
+			if (!this.owns(bankRemove)) {
+				throw new Error(`You don't own: ${bankRemove.clone().remove(this.bank())}.`);
+			}
+			removeFns.push(() => {
+				return this.removeItemsFromBank(bankRemove);
+			});
+		}
+
+		const promises = removeFns.map(fn => fn());
+		await Promise.all(promises);
+		return {
+			realCost
 		};
-
-		if (items[995]) {
-			await this.removeGP(items[995]);
-			delete items[995];
-		}
-
-		this.log(`Had items removed from bank - ${JSON.stringify(items)}`);
-		return this.queueFn(() =>
-			this.settings.update(UserSettings.Bank, removeBankFromBank(currentBank, items))
-		);
 	}
 
 	public async hasItem(this: User, itemID: number, amount = 1, sync = true) {
@@ -220,9 +306,7 @@ export default class extends Extendable {
 
 	public owns(this: User, bank: ItemBank | Bank | string | number) {
 		if (typeof bank === 'string' || typeof bank === 'number') {
-			return Boolean(
-				this.settings.get(UserSettings.Bank)[typeof bank === 'number' ? bank : itemID(bank)]
-			);
+			return Boolean(this.settings.get(UserSettings.Bank)[typeof bank === 'number' ? bank : itemID(bank)]);
 		}
 		const itemBank = bank instanceof Bank ? { ...bank.bank } : bank;
 		return bankHasAllItemsFromBank(

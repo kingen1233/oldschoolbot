@@ -1,20 +1,20 @@
+import { calcPercentOfNum } from 'e';
 import { Task } from 'klasa';
 import { Bank } from 'oldschooljs';
 
 import { Emoji, Events } from '../../lib/constants';
-import { hasArrayOfItemsEquipped } from '../../lib/gear';
 import addSkillingClueToLoot from '../../lib/minions/functions/addSkillingClueToLoot';
 import Fishing from '../../lib/skilling/skills/fishing';
 import { SkillsEnum } from '../../lib/skilling/types';
 import { FishingActivityTaskOptions } from '../../lib/types/minions';
-import { anglerBoostPercent, calcPercentOfNum, roll } from '../../lib/util';
+import { anglerBoostPercent, roll } from '../../lib/util';
 import { handleTripFinish } from '../../lib/util/handleTripFinish';
 import itemID from '../../lib/util/itemID';
 
 export default class extends Task {
 	async run(data: FishingActivityTaskOptions) {
 		let { fishID, quantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		const currentLevel = user.skillLevel(SkillsEnum.Fishing);
 
 		const fish = Fishing.Fishes.find(fish => fish.id === fishID)!;
@@ -47,9 +47,7 @@ export default class extends Task {
 					leapingSalmon += 1;
 					agilityXpReceived += 6;
 					strengthXpReceived += 6;
-				} else if (
-					roll(255 / (32 + Math.floor(1.632 * user.skillLevel(SkillsEnum.Fishing))))
-				) {
+				} else if (roll(255 / (32 + Math.floor(1.632 * user.skillLevel(SkillsEnum.Fishing))))) {
 					xpReceived += 50;
 					leapingTrout += 1;
 					agilityXpReceived += 5;
@@ -63,9 +61,9 @@ export default class extends Task {
 
 		// If they have the entire angler outfit, give an extra 0.5% xp bonus
 		if (
-			hasArrayOfItemsEquipped(
+			user.getGear('skilling').hasEquipped(
 				Object.keys(Fishing.anglerItems).map(i => parseInt(i)),
-				user.getGear('skilling')
+				true
 			)
 		) {
 			const amountToAdd = Math.floor(xpReceived * (2.5 / 100));
@@ -82,23 +80,37 @@ export default class extends Task {
 			}
 		}
 
-		let xpRes = await user.addXP(SkillsEnum.Fishing, xpReceived, duration);
+		let xpRes = await user.addXP({
+			skillName: SkillsEnum.Fishing,
+			amount: xpReceived,
+			duration
+		});
 		xpRes +=
 			agilityXpReceived > 0
-				? await user.addXP(SkillsEnum.Agility, agilityXpReceived, duration)
+				? await user.addXP({
+						skillName: SkillsEnum.Agility,
+						amount: agilityXpReceived,
+						duration
+				  })
 				: '';
 		xpRes +=
 			strengthXpReceived > 0
-				? await user.addXP(SkillsEnum.Strength, strengthXpReceived, duration)
+				? await user.addXP({
+						skillName: SkillsEnum.Strength,
+						amount: strengthXpReceived,
+						duration
+				  })
 				: '';
 
 		let str = `${user}, ${user.minionName} finished fishing ${quantity} ${fish.name}. ${xpRes}`;
 
+		let lootQuantity = quantity;
+
 		if (fish.id === itemID('Raw karambwanji')) {
-			quantity *= 1 + Math.floor(user.skillLevel(SkillsEnum.Fishing) / 5);
+			lootQuantity *= 1 + Math.floor(user.skillLevel(SkillsEnum.Fishing) / 5);
 		}
 		let loot = new Bank({
-			[fish.id]: quantity
+			[fish.id]: lootQuantity
 		});
 
 		// Add clue scrolls
@@ -124,16 +136,18 @@ export default class extends Task {
 		}
 
 		// Roll for pet
-		if (
-			fish.petChance &&
-			roll((fish.petChance - user.skillLevel(SkillsEnum.Fishing) * 25) / quantity)
-		) {
-			loot.add('Heron');
-			str += `\nYou have a funny feeling you're being followed...`;
-			this.client.emit(
-				Events.ServerNotification,
-				`${Emoji.Fishing} **${user.username}'s** minion, ${user.minionName}, just received a Heron while fishing ${fish.name} at level ${currentLevel} Fishing!`
-			);
+		if (fish.petChance) {
+			const chance = fish.petChance - user.skillLevel(SkillsEnum.Fishing) * 25;
+			for (let i = 0; i < quantity; i++) {
+				if (roll(chance)) {
+					loot.add('Heron');
+					str += "\nYou have a funny feeling you're being followed...";
+					this.client.emit(
+						Events.ServerNotification,
+						`${Emoji.Fishing} **${user.username}'s** minion, ${user.minionName}, just received a Heron while fishing ${fish.name} at level ${currentLevel} Fishing!`
+					);
+				}
+			}
 		}
 
 		if (fish.bigFishRate && fish.bigFish) {

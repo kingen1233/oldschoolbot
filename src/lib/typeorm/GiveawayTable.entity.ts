@@ -3,15 +3,7 @@ import { noOp, randArrItem } from 'e';
 import { KlasaUser } from 'klasa';
 import { Bank } from 'oldschooljs';
 import { ItemBank } from 'oldschooljs/dist/meta/types';
-import {
-	BaseEntity,
-	Column,
-	Entity,
-	getConnection,
-	Index,
-	PrimaryColumn,
-	PrimaryGeneratedColumn
-} from 'typeorm';
+import { BaseEntity, Column, Entity, getConnection, Index, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 
 import { client } from '../..';
 import { Events } from '../constants';
@@ -19,7 +11,7 @@ import { Events } from '../constants';
 @Entity({ name: 'giveaway' })
 export class GiveawayTable extends BaseEntity {
 	@PrimaryGeneratedColumn('increment')
-	public id!: string;
+	public id!: number;
 
 	@PrimaryColumn('varchar', { length: 19, name: 'user_id', nullable: false })
 	public userID!: string;
@@ -57,7 +49,7 @@ export class GiveawayTable extends BaseEntity {
 
 	public async complete() {
 		if (this.completed) {
-			throw new Error(`Tried to complete an already completed giveaway.`);
+			throw new Error('Tried to complete an already completed giveaway.');
 		}
 
 		try {
@@ -68,27 +60,24 @@ export class GiveawayTable extends BaseEntity {
 				.where('id = :id', { id: this.id })
 				.execute();
 
-			const channel = client.channels.get(this.channelID) as TextChannel | undefined;
+			const channel = client.channels.cache.get(this.channelID) as TextChannel | undefined;
 			const message = await channel?.messages.fetch(this.messageID).catch(noOp);
 
-			const reactions = message ? message.reactions.get(this.reactionID) : undefined;
-			const users: KlasaUser[] = (reactions?.users.array() || []).filter(
-				u => !u.isIronman && !u.bot && u.id !== this.userID
-			);
-
-			const creator = await client.users.fetch(this.userID);
+			const reactions = message ? message.reactions.cache.get(this.reactionID) : undefined;
+			const users: KlasaUser[] = !reactions
+				? []
+				: (await reactions.users.fetch())!.array()!.filter(u => !u.isIronman && !u.bot && u.id !== this.userID);
+			const creator = await client.fetchUser(this.userID);
 
 			if (users.length === 0 || !channel || !message) {
 				console.error('Giveaway failed');
 				await creator.addItemsToBank(this.bank);
 				creator
-					.send(
-						`Your giveaway failed to finish, you were refunded the items: ${this.bank}.`
-					)
+					.send(`Your giveaway failed to finish, you were refunded the items: ${new Bank(this.bank)}.`)
 					.catch(noOp);
 
 				if (message && channel) {
-					channel.send(`Nobody entered the giveaway :(`);
+					channel.send('Nobody entered the giveaway :(');
 				}
 				return;
 			}
@@ -108,9 +97,9 @@ They received these items: ${osBank}`;
 
 			const resultMsg = await channel.send(str);
 			message.edit(
-				`**Giveaway finished:** https://discord.com/channels/${resultMsg.guild!.id}/${
-					resultMsg.channel.id
-				}/${resultMsg.id}`
+				`**Giveaway finished:** https://discord.com/channels/${resultMsg.guild!.id}/${resultMsg.channel.id}/${
+					resultMsg.id
+				}`
 			);
 		} catch (err) {
 			console.error(err);

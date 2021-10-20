@@ -1,12 +1,11 @@
 /* eslint-disable prefer-promise-reject-errors */
 import { Message, MessageReaction } from 'discord.js';
+import { debounce, sleep } from 'e';
 import { Extendable, ExtendableStore, KlasaMessage, KlasaUser } from 'klasa';
-import { debounce } from 'ts-debounce';
 
 import { ReactionEmoji } from '../../lib/constants';
 import { CustomReactionCollector } from '../../lib/structures/CustomReactionCollector';
 import { MakePartyOptions } from '../../lib/types';
-import { sleep } from '../../lib/util';
 
 async function _setup(
 	msg: KlasaMessage,
@@ -25,9 +24,9 @@ async function _setup(
 	const confirmMessage = (await msg.channel.send(getMessageContent())) as KlasaMessage;
 	async function addEmojis() {
 		await confirmMessage.react(ReactionEmoji.Join);
-		await sleep(750);
+		await sleep(50);
 		await confirmMessage.react(ReactionEmoji.Stop);
-		await sleep(750);
+		await sleep(50);
 		await confirmMessage.react(ReactionEmoji.Start);
 	}
 
@@ -49,9 +48,12 @@ async function _setup(
 
 	const reactionAwaiter = () =>
 		new Promise<KlasaUser[]>(async (resolve, reject) => {
-			const collector = new CustomReactionCollector(
-				confirmMessage,
-				(reaction: MessageReaction, user: KlasaUser) => {
+			const collector = new CustomReactionCollector(confirmMessage, {
+				time: 120_000,
+				max: options.usersAllowed?.length ?? options.maxSize,
+				dispose: true,
+				filter: async (reaction: MessageReaction, user: KlasaUser) => {
+					await user.settings.sync();
 					if (
 						(!options.ironmanAllowed && user.isIronman) ||
 						user.bot ||
@@ -82,18 +84,11 @@ async function _setup(
 						reaction.users.remove(user);
 					}
 
-					return ([
-						ReactionEmoji.Join,
-						ReactionEmoji.Stop,
-						ReactionEmoji.Start
-					] as string[]).includes(reaction.emoji.id);
-				},
-				{
-					time: 120_000,
-					max: options.usersAllowed?.length ?? options.maxSize,
-					dispose: true
+					return ([ReactionEmoji.Join, ReactionEmoji.Stop, ReactionEmoji.Start] as string[]).includes(
+						reaction.emoji.id
+					);
 				}
-			);
+			});
 
 			collector.on('remove', (reaction: MessageReaction, user: KlasaUser) => {
 				if (!usersWhoConfirmed.includes(user)) return false;
@@ -103,7 +98,7 @@ async function _setup(
 
 			function startTrip() {
 				if (usersWhoConfirmed.length < options.minSize) {
-					reject(`Not enough people joined your ${options.party ? 'party' : 'mass'}!`);
+					reject(`${msg.author} Not enough people joined your ${options.party ? 'party' : 'mass'}!`);
 					return;
 				}
 
@@ -151,6 +146,9 @@ async function _setup(
 						}
 						break;
 					}
+
+					default:
+						break;
 				}
 			});
 

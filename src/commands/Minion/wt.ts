@@ -1,22 +1,17 @@
+import { calcWhatPercent, reduceNumByPercent, Time } from "e";
 import { CommandStore, KlasaMessage } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost } from "../../lib/constants";
+import { Activity, xpBoost } from "../../lib/constants";
 import { Eatables } from "../../lib/data/eatables";
 import { warmGear } from "../../lib/data/filterables";
-import { hasItemEquipped } from "../../lib/gear";
 import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
 import { ClientSettings } from "../../lib/settings/types/ClientSettings";
 import { UserSettings } from "../../lib/settings/types/UserSettings";
 import { SkillsEnum } from "../../lib/skilling/types";
 import { BotCommand } from "../../lib/structures/BotCommand";
 import { WintertodtActivityTaskOptions } from "../../lib/types/minions";
-import {
-	addItemToBank,
-	bankHasItem,
-	calcWhatPercent,
-	formatDuration,
-	reduceNumByPercent,
-} from "../../lib/util";
+import { addItemToBank, bankHasItem, formatDuration } from "../../lib/util";
 import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class extends BotCommand {
@@ -39,8 +34,8 @@ export default class extends BotCommand {
 		const fmLevel = msg.author.skillLevel(SkillsEnum.Firemaking);
 		const wcLevel = msg.author.skillLevel(SkillsEnum.Woodcutting);
 		if (fmLevel < 50) {
-			return msg.send(
-				`You need 50 Firemaking to have a chance at defeating the Wintertodt.`
+			return msg.channel.send(
+				"You need 50 Firemaking to have a chance at defeating the Wintertodt."
 			);
 		}
 
@@ -60,7 +55,7 @@ export default class extends BotCommand {
 		let warmGearAmount = 0;
 
 		for (const piece of warmGear) {
-			if (hasItemEquipped(piece, msg.author.getGear("skilling"))) {
+			if (msg.author.getGear("skilling").hasEquipped([piece])) {
 				warmGearAmount++;
 			}
 			if (warmGearAmount > 4) break;
@@ -85,11 +80,15 @@ export default class extends BotCommand {
 
 		const bank = msg.author.settings.get(UserSettings.Bank);
 		for (const food of Eatables) {
+			const healAmount =
+				typeof food.healAmount === "number"
+					? food.healAmount
+					: food.healAmount(msg.author);
 			const amountNeeded =
-				Math.ceil(healAmountNeeded / food.healAmount) * quantity;
+				Math.ceil(healAmountNeeded / healAmount) * quantity;
 			if (!bankHasItem(bank, food.id, amountNeeded)) {
 				if (Eatables.indexOf(food) === Eatables.length - 1) {
-					return msg.send(
+					return msg.channel.send(
 						`You don't have enough food to do Wintertodt! You can use these food items: ${Eatables.map(
 							(i) => i.name
 						).join(", ")}.`
@@ -101,7 +100,9 @@ export default class extends BotCommand {
 			messages.push(
 				`Removed ${amountNeeded}x ${food.name}'s from your bank`
 			);
-			await msg.author.removeItemFromBank(food.id, amountNeeded);
+			await msg.author.removeItemsFromBank(
+				new Bank().add(food.id, amountNeeded)
+			);
 
 			// Track this food cost in Economy Stats
 			await this.client.settings.update(
@@ -118,21 +119,18 @@ export default class extends BotCommand {
 			break;
 		}
 
-		const duration = durationPerTodt * quantity * xpBoost;
+		const duration = durationPerTodt * quantity;
 
-		await addSubTaskToActivityTask<WintertodtActivityTaskOptions>(
-			this.client,
-			{
-				minigameID: "Wintertodt",
-				userID: msg.author.id,
-				channelID: msg.channel.id,
-				quantity,
-				duration,
-				type: Activity.Wintertodt,
-			}
-		);
+		await addSubTaskToActivityTask<WintertodtActivityTaskOptions>({
+			minigameID: "Wintertodt",
+			userID: msg.author.id,
+			channelID: msg.channel.id,
+			quantity,
+			duration,
+			type: Activity.Wintertodt,
+		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now off to kill Wintertodt ${quantity}x times, their trip will take ${formatDuration(

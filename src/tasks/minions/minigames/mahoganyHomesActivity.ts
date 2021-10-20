@@ -1,17 +1,17 @@
-import { Task } from 'klasa';
+import { calcPercentOfNum } from 'e';
+import { KlasaMessage, Task } from 'klasa';
 
 import MahoganyHomesCommand from '../../../commands/Minion/mahoganyhomes';
 import { UserSettings } from '../../../lib/settings/types/UserSettings';
 import { SkillsEnum } from '../../../lib/skilling/types';
 import { MahoganyHomesActivityTaskOptions } from '../../../lib/types/minions';
-import { calcPercentOfNum } from '../../../lib/util';
 import { calcConBonusXP } from '../../../lib/util/calcConBonusXP';
 import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 
 export default class extends Task {
 	async run(data: MahoganyHomesActivityTaskOptions) {
 		const { channelID, quantity, xp, duration, userID, points } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		user.incrementMinigameScore('MahoganyHomes', quantity);
 
 		let bonusXP = 0;
@@ -19,7 +19,11 @@ export default class extends Task {
 		if (outfitMultiplier > 0) {
 			bonusXP = calcPercentOfNum(outfitMultiplier, xp);
 		}
-		const xpRes = await user.addXP(SkillsEnum.Construction, xp + bonusXP, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Construction,
+			amount: xp + bonusXP,
+			duration
+		});
 		await user.settings.update(
 			UserSettings.CarpenterPoints,
 			user.settings.get(UserSettings.CarpenterPoints) + points
@@ -37,8 +41,10 @@ export default class extends Task {
 			channelID,
 			str,
 			res => {
-				user.log(`continued trip of mahogany homes`);
-				return (this.client.commands.get('mh') as MahoganyHomesCommand).build(res);
+				user.log('continued trip of mahogany homes');
+				return (this.client.commands.get('mh') as unknown as MahoganyHomesCommand).build(
+					res
+				) as Promise<KlasaMessage>;
 			},
 			undefined,
 			data,

@@ -1,6 +1,7 @@
+import { Time } from 'e';
 import { Command, Inhibitor, InhibitorStore, KlasaMessage } from 'klasa';
 
-import { BitField, PerkTier, Time } from '../lib/constants';
+import { BitField, PerkTier } from '../lib/constants';
 import { UserSettings } from '../lib/settings/types/UserSettings';
 import getUsersPerkTier from '../lib/util/getUsersPerkTier';
 
@@ -17,7 +18,7 @@ export default class extends Inhibitor {
 			Date.now() - msg.author.createdTimestamp < Time.Month &&
 			!msg.author.settings.get(UserSettings.BitField).includes(BitField.BypassAgeRestriction)
 		) {
-			throw `You cannot use this command as your account is too new. You can ask to be manually verified if you have social media accounts as proof of identity.`;
+			throw 'You cannot use this command as your account is too new. You can ask to be manually verified if you have social media accounts as proof of identity.';
 		}
 	}
 }

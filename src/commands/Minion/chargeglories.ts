@@ -1,11 +1,12 @@
-import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
+import { CommandStore, KlasaMessage, KlasaUser } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost} from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { GloryChargingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, itemID, skillsMeetRequirements } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { GloryChargingActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration, skillsMeetRequirements } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export const gloriesInventorySize = 26;
 export const gloriesInventoryTime = Time.Minute * 2.2;
@@ -21,7 +22,7 @@ export function hasWildyEliteDiary(user: KlasaUser): boolean {
 		mining: 85,
 		smithing: 90,
 		thieving: 84,
-		hunter: 67
+		hunter: 67,
 	});
 }
 
@@ -31,11 +32,11 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '[quantity:int{1}]',
-			usageDelim: ' ',
-			description: 'Sends your minion to charge inventories of glory',
-			examples: ['+chargeglories 5'],
-			categoryFlags: ['minion']
+			usage: "[quantity:int{1}]",
+			usageDelim: " ",
+			description: "Sends your minion to charge inventories of glory",
+			examples: ["+chargeglories 5"],
+			categoryFlags: ["minion"],
 		});
 	}
 
@@ -45,9 +46,9 @@ export default class extends BotCommand {
 		await msg.author.settings.sync(true);
 		const userBank = msg.author.bank();
 
-		const amountHas = userBank.amount('Amulet of glory');
+		const amountHas = userBank.amount("Amulet of glory");
 		if (amountHas < gloriesInventorySize) {
-			return msg.send(
+			return msg.channel.send(
 				`You don't have enough Amulets of glory to recharge. Your minion does trips of ${gloriesInventorySize}x glories.`
 			);
 		}
@@ -59,7 +60,7 @@ export default class extends BotCommand {
 			invDuration /= 3;
 		}
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 200984200;
 
 		const max = Math.min(
 			amountHas / gloriesInventorySize,
@@ -72,8 +73,10 @@ export default class extends BotCommand {
 		const duration = quantity * invDuration * xpBoost;
 
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of inventories of glories you can recharge is ${Math.floor(
 					maxTripLength / invDuration
@@ -82,27 +85,31 @@ export default class extends BotCommand {
 		}
 		const quantityGlories = gloriesInventorySize * quantity;
 
-		if (userBank.amount('Amulet of glory') < quantityGlories) {
-			return msg.send(`You don't have enough ${quantityGlories}x Amulet of glory.`);
+		if (userBank.amount("Amulet of glory") < quantityGlories) {
+			return msg.channel.send(
+				`You don't have enough ${quantityGlories}x Amulet of glory.`
+			);
 		}
 
-		await addSubTaskToActivityTask<GloryChargingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<GloryChargingActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.GloryCharging
+			type: Activity.GloryCharging,
 		});
 
-		await msg.author.removeItemFromBank(itemID('Amulet of glory'), quantityGlories);
+		await msg.author.removeItemsFromBank(
+			new Bank().add("Amulet of glory", quantityGlories)
+		);
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now charging ${quantityGlories} Amulets of glory, doing ${gloriesInventorySize} glories in ${quantity} trips, it'll take around ${formatDuration(
 				duration
 			)} to finish. Removed ${quantityGlories}x Amulet of glory from your bank.${
-				hasDiary ? ' 3x Boost for Wilderness Elite diary.' : ''
+				hasDiary ? " 3x Boost for Wilderness Elite diary." : ""
 			}`
 		);
 	}

@@ -4,6 +4,7 @@ import LootTable from 'oldschooljs/dist/structures/LootTable';
 import { itemID } from 'oldschooljs/dist/util';
 
 import { requiresMinion } from '../../lib/minions/decorators';
+import { defaultFarmingContract } from '../../lib/minions/farming';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { ItemBank } from '../../lib/types';
@@ -155,18 +156,18 @@ export default class extends BotCommand {
 		await msg.author.settings.sync(true);
 
 		const userBank = msg.author.settings.get(UserSettings.Bank);
-		const { plantTier } = msg.author.settings.get(UserSettings.Minion.FarmingContract);
+		const { plantTier } = msg.author.settings.get(UserSettings.Minion.FarmingContract) ?? defaultFarmingContract;
 		const loot = new Bank();
 
 		if (bankHasItem(userBank, itemID('Seed pack'), 1)) {
 			loot.add(openSeedPack(plantTier));
 		} else {
-			return msg.send(`You have no seed packs to open!`);
+			return msg.channel.send('You have no seed packs to open!');
 		}
 
-		await msg.author.removeItemFromBank(itemID('Seed pack'), 1);
+		await msg.author.removeItemsFromBank(new Bank().add('Seed pack'));
 		await msg.author.addItemsToBank(loot.bank, true);
 
-		return msg.send(`You opened a seed pack and received: ${loot}.`);
+		return msg.channel.send(`You opened a seed pack and received: ${loot}.`);
 	}
 }

@@ -48,22 +48,18 @@ const defenders = [
 export default class extends Task {
 	async run(data: CyclopsActivityTaskOptions) {
 		const { userID, channelID, quantity } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		const userBank = new Bank(user.settings.get(UserSettings.Bank));
 
 		let loot = new Bank();
 
 		for (let i = 0; i < quantity; i++) {
-			const highestDefenderOwned = defenders.find(
-				def => userBank.has(def.itemID) || loot.has(def.itemID)
-			);
+			const highestDefenderOwned = defenders.find(def => userBank.has(def.itemID) || loot.has(def.itemID));
 			const possibleDefenderToDrop =
 				defenders[
 					Math.max(
 						0,
-						highestDefenderOwned
-							? defenders.indexOf(highestDefenderOwned) - 1
-							: defenders.length - 1
+						highestDefenderOwned ? defenders.indexOf(highestDefenderOwned) - 1 : defenders.length - 1
 					)
 				];
 			if (roll(possibleDefenderToDrop.rollChance)) {
@@ -72,24 +68,16 @@ export default class extends Task {
 			loot.add(CyclopsTable.roll());
 		}
 
-		await user.addItemsToBank(loot.bank, true);
+		const { previousCL, itemsAdded } = await user.addItemsToBank(loot.bank, true);
 
-		let str = `${user}, ${
-			user.minionName
-		} finished killing ${quantity} Cyclops. Your Cyclops KC is now ${
+		let str = `${user}, ${user.minionName} finished killing ${quantity} Cyclops. Your Cyclops KC is now ${
 			(user.settings.get(UserSettings.MonsterScores)[cyclopsID] ?? 0) + quantity
 		}.`;
 
-		user.incrementMonsterScore(cyclopsID, quantity);
+		await user.incrementMonsterScore(cyclopsID, quantity);
 		const { image } = await this.client.tasks
 			.get('bankImage')!
-			.generateBankImage(
-				loot.bank,
-				`Loot From ${quantity}x Cyclops`,
-				true,
-				{ showNewCL: 1 },
-				user
-			);
+			.generateBankImage(itemsAdded, `Loot From ${quantity}x Cyclops`, true, { showNewCL: 1 }, user, previousCL);
 
 		handleTripFinish(
 			this.client,
@@ -97,12 +85,12 @@ export default class extends Task {
 			channelID,
 			str,
 			res => {
-				user.log(`continued cyclops`);
+				user.log('continued cyclops');
 				return this.client.commands.get('wg')!.run(res, [quantity, 'cyclops']);
 			},
 			image!,
 			data,
-			loot.bank
+			itemsAdded
 		);
 	}
 }

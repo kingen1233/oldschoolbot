@@ -58,11 +58,10 @@ const ringNests = new LootTable()
 	.add('Ruby ring', 1, 9)
 	.add('Diamond ring', 1, 1);
 
-const eggNest = new LootTable().add('Red bird egg').add('Blue bird egg').add('Green bird egg');
+export const eggNest = new LootTable().add('Red bird egg').add('Blue bird egg').add('Green bird egg');
 
 export const nestTable = new LootTable()
 	.every(birdsNestID)
 	.add(eggNest, 1, 3)
 	.add(ringNests, 1, 32)
-	.add(wysonSeedsNest, 1, 65 / 2)
-	.add(treeSeedsNest, 1, 65 / 2);
+	.add(treeSeedsNest, 1, 65);

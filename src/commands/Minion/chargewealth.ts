@@ -1,11 +1,12 @@
-import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
+import { CommandStore, KlasaMessage, KlasaUser } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { WealthChargingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, itemID, skillsMeetRequirements } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { WealthChargingActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration, skillsMeetRequirements } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export const wealthInventorySize = 26;
 export const wealthInventoryTime = Time.Minute * 2.2;
@@ -21,7 +22,7 @@ export function hasWildyEliteDiary(user: KlasaUser): boolean {
 		mining: 85,
 		smithing: 90,
 		thieving: 84,
-		hunter: 67
+		hunter: 67,
 	});
 }
 
@@ -31,11 +32,12 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '[quantity:int{1}]',
-			usageDelim: ' ',
-			description: 'Sends your minion to charge inventories of ring of wealths',
-			examples: ['+chargewealth 5'],
-			categoryFlags: ['minion']
+			usage: "[quantity:int{1}]",
+			usageDelim: " ",
+			description:
+				"Sends your minion to charge inventories of ring of wealths",
+			examples: ["+chargewealth 5"],
+			categoryFlags: ["minion"],
 		});
 	}
 
@@ -45,9 +47,9 @@ export default class extends BotCommand {
 		await msg.author.settings.sync(true);
 		const userBank = msg.author.bank();
 
-		const amountHas = userBank.amount('Ring of wealth');
+		const amountHas = userBank.amount("Ring of wealth");
 		if (amountHas < wealthInventorySize) {
-			return msg.send(
+			return msg.channel.send(
 				`You don't have enough Rings of wealth to recharge. Your minion does trips of ${wealthInventorySize}x rings of wealth.`
 			);
 		}
@@ -59,7 +61,7 @@ export default class extends BotCommand {
 			invDuration /= 3;
 		}
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 200984200;
 
 		const max = Math.min(
 			amountHas / wealthInventorySize,
@@ -72,8 +74,10 @@ export default class extends BotCommand {
 		const duration = quantity * invDuration * xpBoost;
 
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of inventories of rings of wealth you can recharge is ${Math.floor(
 					maxTripLength / invDuration
@@ -82,27 +86,31 @@ export default class extends BotCommand {
 		}
 		const quantityWealths = wealthInventorySize * quantity;
 
-		if (userBank.amount('Ring of wealth') < quantityWealths) {
-			return msg.send(`You don't have enough Rings of wealth, ${quantityWealths} required.`);
+		if (userBank.amount("Ring of wealth") < quantityWealths) {
+			return msg.channel.send(
+				`You don't have enough Rings of wealth, ${quantityWealths} required.`
+			);
 		}
 
-		await addSubTaskToActivityTask<WealthChargingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<WealthChargingActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.WealthCharging
+			type: Activity.WealthCharging,
 		});
 
-		await msg.author.removeItemFromBank(itemID('Ring of wealth'), quantityWealths);
+		await msg.author.removeItemsFromBank(
+			new Bank().add("Ring of wealth", quantityWealths)
+		);
 
-		return msg.send(
+		return msg.channel.send(
 			`${
 				msg.author.minionName
 			} is now charging ${quantityWealths} Rings of wealth, doing ${wealthInventorySize} Rings of wealth in ${quantity} trips, it'll take around ${formatDuration(
 				duration
 			)} to finish. Removed ${quantityWealths}x Ring of wealth from your bank.${
-				hasDiary ? ' 3x Boost for Wilderness Elite diary.' : ''
+				hasDiary ? " 3x Boost for Wilderness Elite diary." : ""
 			}`
 		);
 	}

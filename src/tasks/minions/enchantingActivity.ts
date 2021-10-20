@@ -8,12 +8,16 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: EnchantingActivityTaskOptions) {
 		let { itemID, quantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const enchantable = Enchantables.find(fletchable => fletchable.id === itemID)!;
 
 		const xpReceived = quantity * enchantable.xp;
-		const xpRes = await user.addXP(SkillsEnum.Magic, xpReceived, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Magic,
+			amount: xpReceived,
+			duration
+		});
 
 		const loot = enchantable.output.clone().multiply(quantity);
 		await user.addItemsToBank(loot.bank, true);

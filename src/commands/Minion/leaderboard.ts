@@ -1,26 +1,41 @@
 import { MessageEmbed } from 'discord.js';
 import { CommandStore, KlasaMessage, util } from 'klasa';
-import { Monsters } from 'oldschooljs';
 import { IsNull, Not } from 'typeorm';
 
+import { production } from '../../config';
 import { Minigames } from '../../extendables/User/Minigame';
-import { badges, Emoji, Time } from '../../lib/constants';
-import { collectionLogTypes } from '../../lib/data/collectionLog';
+import { badges, Emoji } from '../../lib/constants';
+import { getCollectionItems } from '../../lib/data/Collections';
+import ClueTiers from '../../lib/minions/data/clueTiers';
+import { effectiveMonsters } from '../../lib/minions/data/killableMonsters';
 import { batchSyncNewUserUsernames } from '../../lib/settings/settings';
 import Skills from '../../lib/skilling/skills';
 import Agility from '../../lib/skilling/skills/agility';
 import Hunter from '../../lib/skilling/skills/hunter/hunter';
 import { BotCommand } from '../../lib/structures/BotCommand';
-import { UserRichDisplay } from '../../lib/structures/UserRichDisplay';
 import { MinigameTable } from '../../lib/typeorm/MinigameTable.entity';
 import { NewUserTable } from '../../lib/typeorm/NewUserTable.entity';
-import { ItemBank, SettingsEntry } from '../../lib/types';
-import { convertXPtoLVL, stringMatches, stripEmojis, toTitleCase } from '../../lib/util';
-import { Workers } from '../../lib/workers';
-import { CLUser } from '../../lib/workers/leaderboard.worker';
+import { ItemBank } from '../../lib/types';
+import {
+	convertXPtoLVL,
+	formatDuration,
+	makePaginatedMessage,
+	stringMatches,
+	stripEmojis,
+	toTitleCase
+} from '../../lib/util';
+import getOSItem from '../../lib/util/getOSItem';
 import PostgresProvider from '../../providers/postgres';
+import { allOpenables } from './open';
 
-const CACHE_TIME = Time.Minute * 5;
+const allOpenableItems = allOpenables.map(getOSItem);
+
+export const LB_PAGE_SIZE = 10;
+
+export interface CLUser {
+	id: string;
+	qty: number;
+}
 
 export interface SkillUser {
 	id: string;
@@ -62,55 +77,21 @@ interface KCUser {
 	minigameScores: ItemBank;
 }
 
-interface GPLeaderboard {
-	lastUpdated: number;
-	list: GPUser[];
-}
-
-interface QPLeaderboard {
-	lastUpdated: number;
-	list: QPUser[];
-}
-
-interface PetLeaderboard {
-	lastUpdated: number;
-	list: PetUser[];
-}
-
 interface UsernameCache {
 	lastUpdated: number;
 	map: Map<string, string>;
 }
 
 export default class extends BotCommand {
-	public settingEntryCache: SettingsEntry[] = [];
-	public lastCacheUpdate = 0;
-
 	public usernameCache: UsernameCache = {
 		lastUpdated: 0,
 		map: new Map()
 	};
 
-	public gpLeaderboard: GPLeaderboard = {
-		lastUpdated: 0,
-		list: []
-	};
-
-	public qpLeaderboard: QPLeaderboard = {
-		lastUpdated: 0,
-		list: []
-	};
-
-	public petLeaderboard: PetLeaderboard = {
-		lastUpdated: 0,
-		list: []
-	};
-
 	public constructor(store: CommandStore, file: string[], directory: string) {
 		super(store, file, directory, {
 			description: 'Shows the bots leaderboards.',
-			usage:
-				'[pets|gp|petrecords|kc|cl|qp|skills|sacrifice|laps|creatures|minigame] [name:...string]',
+			usage: '[pets|gp|petrecords|kc|cl|qp|skills|sacrifice|laps|creatures|minigame|farmingcontracts|xp|open|inferno] [name:...string]',
 			usageDelim: ' ',
 			subcommands: true,
 			aliases: ['lb'],
@@ -130,10 +111,15 @@ export default class extends BotCommand {
 	}
 
 	async init() {
-		await this.cacheUsernames();
+		if (production) await this.cacheUsernames();
 	}
 
-	getUsername(userID: string) {
+	getPos(page: number, record: number) {
+		return `${page * LB_PAGE_SIZE + 1 + record}. `;
+	}
+
+	getUsername(userID: string, lbSize?: number) {
+		if (lbSize && lbSize < 10) return '(Anonymous)';
 		const username = this.usernameCache.map.get(userID);
 		if (!username) return '(Unknown)';
 		return username;
@@ -146,7 +132,7 @@ export default class extends BotCommand {
 		}
 
 		const arrayOfUsers: { badges: number[]; id: string; ironman: boolean }[] = await this.query(
-			`SELECT "badges", "id", "minion.ironman" as "ironman" FROM users WHERE ARRAY_LENGTH(badges, 1) > 0 OR "minion.ironman" = true;`,
+			'SELECT "badges", "id", "minion.ironman" as "ironman" FROM users WHERE ARRAY_LENGTH(badges, 1) > 0 OR "minion.ironman" = true;',
 			false
 		);
 
@@ -167,6 +153,32 @@ export default class extends BotCommand {
 		return null;
 	}
 
+	async xp(msg: KlasaMessage) {
+		msg.flagArgs.xp = 'xp';
+		this.skills(msg, ['overall']);
+		return null;
+	}
+
+	async inferno(msg: KlasaMessage) {
+		const res = await this.query(`SELECT user_id, duration
+FROM activity
+WHERE type = 'Inferno'
+AND data->>'deathTime' IS NULL
+AND completed = true
+ORDER BY duration ASC
+LIMIT 10;`);
+
+		if (res.length === 0) {
+			return msg.channel.send('No results.');
+		}
+
+		return msg.channel.send(
+			`**Inferno Records**\n\n${res
+				.map((e, i) => `${i + 1}. **${this.getUsername(e.user_id)}:** ${formatDuration(e.duration)}`)
+				.join('\n')}`
+		);
+	}
+
 	async query(query: string, cacheUsernames = true) {
 		const result = await (this.client.providers.default as PostgresProvider).runAll(query);
 		if (cacheUsernames) this.cacheUsernames();
@@ -176,19 +188,24 @@ export default class extends BotCommand {
 	async gp(msg: KlasaMessage) {
 		const users = (
 			await this.query(
-				`SELECT "id", "GP" FROM users WHERE "GP" > 1000000 ORDER BY "GP" DESC LIMIT 500;`
+				`SELECT "id", "GP"
+					   FROM users
+					   WHERE "GP" > 1000000
+					   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+					   ORDER BY "GP" DESC
+					   LIMIT 500;`
 			)
 		).map((res: any) => ({ ...res, GP: parseInt(res.GP) })) as GPUser[];
 
 		this.doMenu(
 			msg,
 			util
-				.chunk(users, 10)
-				.map(subList =>
+				.chunk(users, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, GP }) =>
-								`**${this.getUsername(id)}** has ${GP.toLocaleString()} GP `
+							({ id, GP }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${GP.toLocaleString()} GP`
 						)
 						.join('\n')
 				),
@@ -200,25 +217,23 @@ export default class extends BotCommand {
 		const list: { id: string; amount: number }[] = (
 			await this.query(
 				`SELECT "id", "sacrificedValue"
-FROM users
-WHERE "sacrificedValue" > 0
-${msg.flagArgs.im ? 'AND "minion.ironman" = true' : ''}
-ORDER BY "sacrificedValue"
-DESC LIMIT 2000;`
+					   FROM users
+					   WHERE "sacrificedValue" > 0
+					   ${msg.flagArgs.im ? 'AND "minion.ironman" = true' : ''}
+					   ORDER BY "sacrificedValue"
+					   DESC LIMIT 2000;`
 			)
 		).map((res: any) => ({ ...res, amount: parseInt(res.sacrificedValue) }));
 
 		this.doMenu(
 			msg,
 			util
-				.chunk(list, 10)
-				.map(subList =>
+				.chunk(list, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, amount }) =>
-								`**${this.getUsername(
-									id
-								)}** sacrificed ${amount.toLocaleString()} GP `
+							({ id, amount }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${amount.toLocaleString()} GP `
 						)
 						.join('\n')
 				),
@@ -229,30 +244,29 @@ DESC LIMIT 2000;`
 	async qp(msg: KlasaMessage) {
 		const onlyForGuild = msg.flagArgs.server;
 
-		if (Date.now() - this.qpLeaderboard.lastUpdated > CACHE_TIME) {
-			this.qpLeaderboard.list = (
-				await this.query(
-					`SELECT "id", "QP" FROM users WHERE "QP" > 0 ORDER BY "QP" DESC LIMIT 2000;`
-				)
-			).map((res: any) => ({ ...res, GP: parseInt(res.GP) }));
-			this.qpLeaderboard.lastUpdated = Date.now();
-		}
-
-		let { list } = this.qpLeaderboard;
+		let list = (
+			await this.query(
+				`SELECT "id", "QP"
+					   FROM users
+					   WHERE "QP" > 0
+					   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+					   ORDER BY "QP" DESC
+					   LIMIT 2000;`
+			)
+		).map((res: any) => ({ ...res, GP: parseInt(res.GP) }));
 
 		if (onlyForGuild && msg.guild) {
-			list = list.filter((qpUser: QPUser) => msg.guild!.members.has(qpUser.id));
+			list = list.filter((qpUser: QPUser) => msg.guild!.members.cache.has(qpUser.id));
 		}
 
 		this.doMenu(
 			msg,
 			util
-				.chunk(list, 10)
-				.map(subList =>
+				.chunk(list, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, QP }) =>
-								`**${this.getUsername(id)}** has ${QP.toLocaleString()} QP`
+							({ id, QP }, j) => `${this.getPos(i, j)}**${this.getUsername(id)}:** ${QP.toLocaleString()}`
 						)
 						.join('\n')
 				),
@@ -260,34 +274,58 @@ DESC LIMIT 2000;`
 		);
 	}
 
-	async pets(msg: KlasaMessage) {
+	async farmingcontracts(msg: KlasaMessage) {
 		const onlyForGuild = msg.flagArgs.server;
 
-		if (Date.now() - this.petLeaderboard.lastUpdated > CACHE_TIME) {
-			this.petLeaderboard.list = await this.query(
-				`SELECT u.id, u.petcount FROM (
-  SELECT (SELECT COUNT(*) FROM JSON_OBJECT_KEYS(pets)) petcount, id FROM users
-) u
-ORDER BY u.petcount DESC LIMIT 2000;`
-			);
-			this.petLeaderboard.lastUpdated = Date.now();
-		}
-
-		let { list } = this.petLeaderboard;
+		let list = await this.query(
+			`SELECT id, CAST("minion.farmingContract"->>'contractsCompleted' AS INTEGER) as count
+				   FROM users
+				   WHERE "minion.farmingContract" is not null and CAST ("minion.farmingContract"->>'contractsCompleted' AS INTEGER) >= 1
+				   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+				   ORDER BY count DESC
+				   LIMIT 2000;`
+		);
 
 		if (onlyForGuild && msg.guild) {
-			list = list.filter((gpUser: PetUser) => msg.guild!.members.has(gpUser.id));
+			list = list.filter(user => msg.guild!.members.cache.has(user.id));
+		}
+
+		this.doMenu(
+			msg,
+			util.chunk(list, LB_PAGE_SIZE).map((subList, i) =>
+				subList
+					.map(({ id, count }, j) => {
+						return `${this.getPos(i, j)}**${this.getUsername(id)}:** ${count.toLocaleString()}`;
+					})
+					.join('\n')
+			),
+			'Farming contracts Leaderboard'
+		);
+	}
+
+	async pets(msg: KlasaMessage) {
+		const onlyForGuild = msg.flagArgs.server;
+		let list = await this.query(
+			`select id, count(p) as petcount
+				   from users, json_object_keys(pets) p
+				   ${msg.flagArgs.im ? ' WHERE "minion.ironman" = true ' : ''}
+				   group by id
+				   order by petcount desc
+				   limit 2000`
+		);
+		if (onlyForGuild && msg.guild) {
+			list = list.filter((gpUser: PetUser) => msg.guild!.members.cache.has(gpUser.id));
 		}
 
 		this.doMenu(
 			msg,
 			util
-				.chunk(list, 10)
-				.map(subList =>
+				.chunk(list, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, petcount }) =>
-								`**${this.getUsername(id)}** has ${petcount.toLocaleString()} pets `
+							({ id, petcount }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${petcount.toLocaleString()}`
 						)
 						.join('\n')
 				),
@@ -296,12 +334,12 @@ ORDER BY u.petcount DESC LIMIT 2000;`
 	}
 
 	async minigame(msg: KlasaMessage, [name = '']: [string]) {
-		const minigame = Minigames.find(m => stringMatches(m.name, name));
+		const minigame = Minigames.find(
+			m => stringMatches(m.name, name) || m.aliases.some(a => stringMatches(a, name))
+		);
 		if (!minigame) {
-			return msg.send(
-				`That's not a valid minigame. Valid minigames are: ${Minigames.map(
-					m => m.name
-				).join(', ')}.`
+			return msg.channel.send(
+				`That's not a valid minigame. Valid minigames are: ${Minigames.map(m => m.name).join(', ')}.`
 			);
 		}
 
@@ -315,10 +353,15 @@ ORDER BY u.petcount DESC LIMIT 2000;`
 		this.doMenu(
 			msg,
 			util
-				.chunk(res, 10)
-				.map(subList =>
+				.chunk(res, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
-						.map(u => `**${this.getUsername(u.userID)}:** ${u[minigame.key]}`)
+						.map(
+							(u, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(u.userID)}:** ${u[
+									minigame.key
+								].toLocaleString()}`
+						)
 						.join('\n')
 				),
 			`${minigame.name} Leaderboard`
@@ -326,44 +369,100 @@ ORDER BY u.petcount DESC LIMIT 2000;`
 	}
 
 	async kc(msg: KlasaMessage, [name = '']: [string]) {
-		const monster = Monsters.find(
-			mon =>
-				stringMatches(mon.name, name) ||
-				mon.aliases.some(alias => stringMatches(alias, name))
+		const monster = effectiveMonsters.find(
+			mon => stringMatches(mon.name, name) || mon.aliases.some(alias => stringMatches(alias, name))
 		);
 		if (!monster) {
-			return msg.send(`That's not a valid monster!`);
+			return msg.channel.send("That's not a valid monster!");
 		}
-
-		let key = 'monsterScores' as const;
-		let entityID = monster.id;
-		let list = (
-			await this.query(
-				`SELECT id, "${key}" FROM users WHERE CAST ("${key}"->>'${entityID}' AS INTEGER) > 5;`
-			)
-		)
-			.filter(user => typeof user[key][entityID] === 'number')
-			.sort((a: KCUser, b: KCUser) => {
-				const aScore = a[key]![entityID] ?? 0;
-				const bScore = b[key]![entityID] ?? 0;
-				return bScore - aScore;
-			})
-			.slice(0, 2000);
+		let list = await this.query(
+			`SELECT id, CAST("monsterScores"->>'${monster.id}' AS INTEGER) as kc
+					   FROM users
+					   WHERE CAST("monsterScores"->>'${monster.id}' AS INTEGER) > 5
+					   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+					   ORDER BY kc DESC
+					   LIMIT 2000;`
+		);
 
 		if (msg.flagArgs.server && msg.guild) {
-			list = list.filter((kcUser: KCUser) => msg.guild!.members.has(kcUser.id));
+			list = list.filter((kcUser: KCUser) => msg.guild!.members.cache.has(kcUser.id));
 		}
 
 		this.doMenu(
 			msg,
 			util
-				.chunk(list, 10)
-				.map(subList =>
+				.chunk(list, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
-						.map(user => `**${this.getUsername(user.id)}:** ${user[key][entityID]} KC`)
+						.map(
+							(user, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(user.id)}:** ${user.kc.toLocaleString()}`
+						)
 						.join('\n')
 				),
 			`KC Leaderboard for ${monster.name}`
+		);
+	}
+
+	async open(msg: KlasaMessage, [name = '']: [string]) {
+		name = name.trim();
+
+		let entityID = -1;
+		let key = '';
+		let openableName = '';
+
+		const clue = !name
+			? undefined
+			: ClueTiers.find(
+					clue => stringMatches(clue.name, name) || clue.name.toLowerCase().includes(name.toLowerCase())
+			  );
+
+		if (clue) {
+			entityID = clue.id;
+			key = 'clueScores';
+			openableName = clue.name;
+		} else {
+			const openable = !name
+				? undefined
+				: allOpenableItems.find(
+						item => stringMatches(item.name, name) || item.name.toLowerCase().includes(name.toLowerCase())
+				  );
+			if (openable) {
+				entityID = openable.id;
+				key = 'openable_scores';
+				openableName = openable.name;
+			}
+		}
+
+		if (entityID === -1) {
+			return msg.channel.send(
+				`That's not a valid openable item! You can check: ${allOpenableItems.map(i => i.name).join(', ')}.`
+			);
+		}
+
+		let list = await this.query(
+			`SELECT id, ("${key}"->>'${entityID}')::int as qty FROM users
+			WHERE ("${key}"->>'${entityID}')::int > 3
+			${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+			ORDER BY qty DESC LIMIT 30;`
+		);
+
+		this.doMenu(
+			msg,
+			util
+				.chunk(list, LB_PAGE_SIZE)
+				.map((subList, i) =>
+					subList
+						.map(
+							(user, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(
+									user.id,
+									list.length
+								)}:** ${user.qty.toLocaleString()}`
+						)
+						.join('\n')
+				),
+			`Open Leaderboard for ${openableName}`
 		);
 	}
 
@@ -373,50 +472,56 @@ ORDER BY u.petcount DESC LIMIT 2000;`
 
 		const skillsVals = Object.values(Skills);
 
-		const skill = skillsVals.find(_skill =>
-			_skill.aliases.some(name => stringMatches(name, inputSkill))
-		);
+		const skill = skillsVals.find(_skill => _skill.aliases.some(name => stringMatches(name, inputSkill)));
 
 		if (inputSkill === 'overall') {
-			res = await this.query(
-				`SELECT id,  ${skillsVals.map(s => `"skills.${s.id}"`)}, ${skillsVals
-					.map(s => `"skills.${s.id}"`)
-					.join(' + ')} as totalxp
-FROM users
-${msg.flagArgs.im ? 'WHERE "minion.ironman" = true' : ''}
-ORDER BY totalxp
-DESC LIMIT 500;`
-			);
-			overallUsers = res
-				.map(user => {
-					let totalLevel = 0;
-					for (const skill of skillsVals) {
-						totalLevel += convertXPtoLVL(
-							Number(user[`skills.${skill.id}` as keyof SkillUser]) as any
-						);
-					}
-					return {
-						id: user.id,
-						totalLevel,
-						ironman: user['minion.ironman'],
-						totalXP: Number(user.totalxp!)
-					};
-				})
-				.sort((a, b) => b.totalLevel - a.totalLevel);
+			const query = `SELECT
+								u.id,
+								${skillsVals.map(s => `"skills.${s.id}"`)},
+								${skillsVals.map(s => `"skills.${s.id}"::int8`).join(' + ')} as totalxp,
+								u."minion.ironman"
+							FROM
+								users u
+							${msg.flagArgs.im ? ' WHERE "minion.ironman" = true ' : ''}
+							ORDER BY totalxp DESC
+							LIMIT 2000;`;
+			res = await this.query(query);
+			overallUsers = res.map(user => {
+				let totalLevel = 0;
+				for (const skill of skillsVals) {
+					totalLevel += convertXPtoLVL(Number(user[`skills.${skill.id}` as keyof SkillUser]) as any);
+				}
+				return {
+					id: user.id,
+					totalLevel,
+					ironman: user['minion.ironman'],
+					totalXP: Number(user.totalxp!)
+				};
+			});
+			if (!msg.flagArgs.xp) {
+				overallUsers.sort((a, b) => b.totalLevel - a.totalLevel);
+			}
+			overallUsers.slice(0, 100);
 		} else {
 			if (!skill) {
-				return msg.send(`That's not a valid skill.`);
+				return msg.channel.send("That's not a valid skill.");
 			}
 
-			res = await this.query(
-				`SELECT "skills.${skill.id}", id, "minion.ironman" FROM users ORDER BY "skills.${skill.id}" DESC LIMIT 2000;`
-			);
+			const query = `SELECT
+								u."skills.${skill.id}", u.id, u."minion.ironman"
+							FROM
+								users u
+							${msg.flagArgs.im ? ' WHERE "minion.ironman" = true ' : ''}
+							ORDER BY
+								1 DESC
+							LIMIT 2000;`;
+			res = await this.query(query);
 		}
 
 		const onlyForGuild = msg.flagArgs.server;
 
 		if (onlyForGuild && msg.guild) {
-			res = res.filter((user: SkillUser) => msg.guild!.members.has(user.id));
+			res = res.filter((user: SkillUser) => msg.guild!.members.cache.has(user.id));
 		}
 
 		if (msg.flagArgs.im || msg.flagArgs.ironman) {
@@ -426,31 +531,31 @@ DESC LIMIT 500;`
 		if (inputSkill === 'overall') {
 			this.doMenu(
 				msg,
-				util.chunk(overallUsers, 10).map(subList =>
+				util.chunk(overallUsers, LB_PAGE_SIZE).map((subList, i) =>
 					subList
-						.map((obj: OverallSkillUser) => {
-							return `**${this.getUsername(
+						.map((obj: OverallSkillUser, j) => {
+							return `${this.getPos(i, j)}**${this.getUsername(
 								obj.id
 							)}:** ${obj.totalLevel.toLocaleString()} (${obj.totalXP.toLocaleString()} XP)`;
 						})
 						.join('\n')
 				),
-				`Overall Leaderboard`
+				`Overall Leaderboard${msg.flagArgs.xp ? ' (XP)' : ''}`
 			);
 			return;
 		}
 
 		this.doMenu(
 			msg,
-			util.chunk(res, 10).map(subList =>
+			util.chunk(res, LB_PAGE_SIZE).map((subList, i) =>
 				subList
-					.map((obj: SkillUser) => {
+					.map((obj: SkillUser, j) => {
 						const objKey = `skills.${skill?.id}` as keyof SkillUser;
 						const skillXP = Number(obj[objKey] ?? 0);
 
-						return `**${this.getUsername(
+						return `${this.getPos(i, j)}**${this.getUsername(
 							obj.id
-						)}:** ${skillXP.toLocaleString()} xp (${convertXPtoLVL(skillXP)})`;
+						)}:** ${skillXP.toLocaleString()} XP (${convertXPtoLVL(skillXP)})`;
 					})
 					.join('\n')
 			),
@@ -458,74 +563,67 @@ DESC LIMIT 500;`
 		);
 	}
 
-	async cl(msg: KlasaMessage, [inputType = 'all']: [string]) {
-		const type = collectionLogTypes.find(_type =>
-			_type.aliases.some(name => stringMatches(name, inputType))
-		);
-
-		if (!type) {
-			return msg.send(
-				`That's not a valid collection log type. The valid types are: ${collectionLogTypes
-					.map(type => type.name)
-					.join(', ')}`
-			);
+	async cl(msg: KlasaMessage, [inputType = 'overall']: [string]) {
+		const items = getCollectionItems(inputType, false);
+		if (!items || items.length === 0) {
+			return msg.channel.send("That's not a valid collection log category. Check +cl for all possible logs.");
 		}
-
-		const result = (await this.query(
-			`SELECT u.id, u."logBankLength", u."collectionLogBank" FROM (
-  SELECT (SELECT COUNT(*) FROM JSON_OBJECT_KEYS("collectionLogBank")) "logBankLength" , id, "collectionLogBank" FROM users ${
-		msg.flagArgs.im ? 'WHERE "minion.ironman" = true' : ''
-  }
+		const users = (
+			await this.client.orm.query(`
+SELECT id, (cardinality(u.cl_keys) - u.inverse_length) as qty
+				  FROM (
+  SELECT array(SELECT * FROM jsonb_object_keys("collectionLogBank")) "cl_keys",
+  				id, "collectionLogBank",
+			    cardinality(array(SELECT * FROM jsonb_object_keys("collectionLogBank" - array[${items
+					.map(i => `'${i}'`)
+					.join(', ')}]))) "inverse_length"
+  FROM users
+  WHERE "collectionLogBank" ?| array[${items.map(i => `'${i}'`).join(', ')}]
+  ${msg.flagArgs.im ? 'AND "minion.ironman" = true' : ''}
 ) u
-WHERE u."logBankLength" > 300
-ORDER BY u."logBankLength" DESC;`
-		)) as CLUser[];
-		const users = await Workers.leaderboard({
-			type: 'cl',
-			users: result,
-			collectionLogInput: type
-		});
+ORDER BY qty DESC
+LIMIT 50;
+`)
+		).filter((i: any) => i.qty > 0) as CLUser[];
 
-		const items = Object.values(type.items).flat(Infinity);
 		this.doMenu(
 			msg,
 			util
-				.chunk(users, 10)
-				.map(subList =>
+				.chunk(users, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, collectionLogBank }) =>
-								`**${this.getUsername(id)}:** ${
-									Object.entries(collectionLogBank).filter(
-										([itemID, qty]) =>
-											qty > 0 && items.includes(parseInt(itemID))
-									).length
-								}`
+							({ id, qty }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${qty.toLocaleString()}`
 						)
 						.join('\n')
 				),
-			`${type.name} Collection Log Leaderboard`
+			`${toTitleCase(inputType.toLowerCase())} Collection Log Leaderboard`
 		);
 	}
 
 	async laps(msg: KlasaMessage, [courseName = '']: [string]) {
-		const course = Agility.Courses.find(course =>
-			course.aliases.some(alias => stringMatches(alias, courseName))
+		const course = Agility.Courses.find(course => course.aliases.some(alias => stringMatches(alias, courseName)));
+
+		if (!course) return msg.channel.send('Thats not a valid agility course.');
+
+		const data: { id: string; count: number }[] = await this.query(
+			`SELECT id, ("lapsScores"->>'${course.id}')::int as count
+				   FROM users
+				   WHERE "lapsScores"->>'${course.id}' IS NOT NULL
+				   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+				   ORDER BY count DESC LIMIT 50;`
 		);
-
-		if (!course) return msg.send(`Thats not a valid agility course.`);
-
-		const data: { id: string; lapCount: number }[] = await this.query(
-			`SELECT id, "lapsScores"->>'${course.id}' as "lapCount" FROM users WHERE "lapsScores"->>'${course.id}' IS NOT NULL ORDER BY ("lapsScores"->>'${course.id}')::int DESC LIMIT 50;`
-		);
-
 		this.doMenu(
 			msg,
 			util
-				.chunk(data, 10)
-				.map(subList =>
+				.chunk(data, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
-						.map(({ id, lapCount }) => `**${this.getUsername(id)}:** ${lapCount} Laps`)
+						.map(
+							({ id, count }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${count.toLocaleString()}`
+						)
 						.join('\n')
 				),
 			`${course.name} Laps Leaderboard`
@@ -535,27 +633,29 @@ ORDER BY u."logBankLength" DESC;`
 	async creatures(msg: KlasaMessage, [creatureName = '']: [string]) {
 		const creature = Hunter.Creatures.find(creature =>
 			creature.aliases.some(
-				alias =>
-					stringMatches(alias, creatureName) ||
-					stringMatches(alias.split(' ')[0], creatureName)
+				alias => stringMatches(alias, creatureName) || stringMatches(alias.split(' ')[0], creatureName)
 			)
 		);
 
-		if (!creature) return msg.send(`Thats not a valid creature.`);
+		if (!creature)
+			return msg.channel.send(
+				`Thats not a valid creature. Valid creatures are: ${Hunter.Creatures.map(h => h.name).join(', ')}`
+			);
 
-		const data: { id: string; creatureCount: number }[] = await this.query(
-			`SELECT id, "creatureScores"->>'${creature.id}' as "creatureCount" FROM users WHERE "creatureScores"->>'${creature.id}' IS NOT NULL ORDER BY ("creatureScores"->>'${creature.id}')::int DESC LIMIT 50;`
-		);
-
+		const query = `SELECT id, ("creatureScores"->>'${creature.id}')::int as count
+				   FROM users WHERE "creatureScores"->>'${creature.id}' IS NOT NULL
+				   ${msg.flagArgs.im ? ' AND "minion.ironman" = true ' : ''}
+				   ORDER BY count DESC LIMIT 50;`;
+		const data: { id: string; count: number }[] = await this.query(query);
 		this.doMenu(
 			msg,
 			util
-				.chunk(data, 10)
-				.map(subList =>
+				.chunk(data, LB_PAGE_SIZE)
+				.map((subList, i) =>
 					subList
 						.map(
-							({ id, creatureCount }) =>
-								`**${this.getUsername(id)}:** ${creatureCount} caught`
+							({ id, count }, j) =>
+								`${this.getPos(i, j)}**${this.getUsername(id)}:** ${count.toLocaleString()}`
 						)
 						.join('\n')
 				),
@@ -564,18 +664,12 @@ ORDER BY u."logBankLength" DESC;`
 	}
 
 	async doMenu(msg: KlasaMessage, pages: string[], title: string) {
-		const loadingMsg = await msg.send(new MessageEmbed().setDescription('Loading...'));
-
-		const display = new UserRichDisplay();
-		display.setFooterPrefix(`Page `);
-
-		for (const page of pages) {
-			display.addPage(new MessageEmbed().setTitle(title).setDescription(page));
+		if (pages.length === 0) {
+			return msg.channel.send('Nobody is on this leaderboard.');
 		}
-
-		return display.start(loadingMsg as KlasaMessage, msg.author.id, {
-			jump: false,
-			stop: false
-		});
+		return makePaginatedMessage(
+			msg,
+			pages.map(p => ({ embeds: [new MessageEmbed().setTitle(title).setDescription(p)] }))
+		);
 	}
 }

@@ -38,6 +38,7 @@ export function taskGroupFromActivity(type: Activity): ActivityGroup {
 			return ActivityGroup.Skilling;
 		case Activity.FightCaves:
 		case Activity.Wintertodt:
+		case Activity.Tempoross:
 		case Activity.Nightmare:
 		case Activity.AnimatedArmour:
 		case Activity.Cyclops:
@@ -59,6 +60,8 @@ export function taskGroupFromActivity(type: Activity): ActivityGroup {
 		case Activity.MageArena:
 		case Activity.Raids:
 		case Activity.MageTrainingArena:
+		case Activity.MageArena2:
+		case Activity.BigChompyBirdHunting:
 			return ActivityGroup.Minigame;
 		default: {
 			console.error(`Unrecognized activity: ${type}`);

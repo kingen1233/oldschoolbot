@@ -1,9 +1,10 @@
+import { Time } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
+import { Bank } from 'oldschooljs';
 
-import { Activity, Time } from '../../lib/constants';
-import { championScrolls } from '../../lib/data/collectionLog';
+import { Activity } from '../../lib/constants';
+import { championScrolls } from '../../lib/data/CollectionsExport';
 import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { MinigameActivityTaskOptions } from '../../lib/types/minions';
 import { randomVariation } from '../../lib/util';
@@ -15,8 +16,7 @@ export default class extends BotCommand {
 			oneAtTime: true,
 			altProtection: true,
 			categoryFlags: ['minion', 'pvm', 'minigame'],
-			description:
-				'Sends your minion to do the Champions Challenge, if you have all the champion scrolls',
+			description: 'Sends your minion to do the Champions Challenge, if you have all the champion scrolls',
 			examples: ['+cc'],
 			aliases: ['cc']
 		});
@@ -27,13 +27,16 @@ export default class extends BotCommand {
 	async run(msg: KlasaMessage) {
 		const bank = msg.author.bank();
 		if (!bank.has(championScrolls)) {
-			return msg.send(
-				`You don't have a set of Champion Scrolls to do the Champion's Challenge! You need 1 of each.`
+			return msg.channel.send(
+				"You don't have a set of Champion Scrolls to do the Champion's Challenge! You need 1 of each."
 			);
 		}
-		for (const id of championScrolls) bank.remove(id);
-		await msg.author.settings.update(UserSettings.Bank, bank.bank);
-		await addSubTaskToActivityTask<MinigameActivityTaskOptions>(this.client, {
+
+		const cost = new Bank();
+		for (const id of championScrolls) cost.add(id);
+		await msg.author.removeItemsFromBank(cost);
+
+		await addSubTaskToActivityTask<MinigameActivityTaskOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity: 1,
@@ -42,7 +45,7 @@ export default class extends BotCommand {
 			minigameID: 'ChampionsChallenge'
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${msg.author.minionName} is now doing the Champion's Challenge! Removed 1x of every Champion scroll from your bank.`
 		);
 	}

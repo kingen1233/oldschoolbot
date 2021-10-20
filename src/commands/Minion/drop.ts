@@ -1,20 +1,17 @@
 import { CommandStore, KlasaMessage } from 'klasa';
-import { Item } from 'oldschooljs/dist/meta/types';
 
+import ClueTiers from '../../lib/minions/data/clueTiers';
+import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
-
-const options = {
-	max: 1,
-	time: 10000,
-	errors: ['time']
-};
+import { itemNameFromID, updateBankSetting } from '../../lib/util';
+import { parseInputCostBank } from '../../lib/util/parseStringBank';
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
 		super(store, file, directory, {
 			cooldown: 3,
-			usage: '[quantity:int{1}] (item:...item)',
+			usage: '[bank:...str]',
 			usageDelim: ' ',
 			oneAtTime: true,
 			categoryFlags: ['minion'],
@@ -23,43 +20,51 @@ export default class extends BotCommand {
 		});
 	}
 
-	async run(msg: KlasaMessage, [quantity, itemArray]: [number, Item[]]) {
-		const userBank = msg.author.settings.get(UserSettings.Bank);
-		const osItem = itemArray.find(i => userBank[i.id]);
+	async run(msg: KlasaMessage, [bankStr]: [string]) {
+		const bank = parseInputCostBank({
+			inputStr: bankStr,
+			usersBank: msg.author.bank(),
+			flags: msg.flagArgs,
+			excludeItems: msg.author.settings.get(UserSettings.FavoriteItems)
+		});
 
-		if (!osItem) {
-			return msg.send(`You don't have any of this item to drop!`);
+		if (!msg.author.owns(bank)) {
+			return msg.channel.send(`You don't own ${bank}.`);
+		}
+		if (bank.length === 0) {
+			return msg.channel.send('No valid items that you own were given.');
 		}
 
-		const numItemsHas = userBank[osItem.id];
-		if (!quantity) {
-			quantity = numItemsHas;
-		}
+		await msg.confirm(
+			`${msg.author}, are you sure you want to drop ${bank}? This is irreversible, and you will lose the items permanently.`
+		);
 
-		if (quantity > numItemsHas) {
-			return msg.send(`You dont have ${quantity}x ${osItem.name}.`);
-		}
+		const favs = msg.author.settings.get(UserSettings.FavoriteItems);
+		let itemsToDoubleCheck = [
+			...favs,
+			...ClueTiers.map(c => [c.id, c.scrollID]),
+			...msg.author
+				.bank()
+				.items()
+				.filter(([item, quantity]) => item.price * quantity >= 100_000_000)
+				.map(i => i[0].id)
+		].flat(1);
+		const doubleCheckItems = itemsToDoubleCheck.filter(f => bank.has(f));
 
-		if (!msg.flagArgs.confirm && !msg.flagArgs.cf) {
-			const dropMsg = await msg.channel.send(
-				`${msg.author}, are you sure you want to drop ${quantity}x ${osItem.name}? This is irreversible, and you will lose the items permanently. Type \`drop\` to confirm.`
+		if (doubleCheckItems.length > 0) {
+			delete msg.flagArgs.cf;
+			await msg.confirm(
+				`${
+					msg.author
+				}, some of the items you are dropping look valuable, are you *really* sure you want to drop them? **${doubleCheckItems
+					.map(itemNameFromID)
+					.join(', ')}**`
 			);
-
-			try {
-				await msg.channel.awaitMessages(
-					_msg =>
-						_msg.author.id === msg.author.id && _msg.content.toLowerCase() === 'drop',
-					options
-				);
-			} catch (err) {
-				return dropMsg.edit(`Cancelling drop of ${quantity}x ${osItem.name}.`);
-			}
 		}
 
-		await msg.author.removeItemFromBank(osItem.id, quantity);
+		await msg.author.removeItemsFromBank(bank);
+		updateBankSetting(this.client, ClientSettings.EconomyStats.DroppedItems, bank);
 
-		msg.author.log(`dropped Quantity[${quantity}] ItemID[${osItem.id}]`);
-
-		return msg.send(`Dropped ${quantity}x ${osItem.name}.`);
+		return msg.channel.send(`Dropped ${bank}.`);
 	}
 }

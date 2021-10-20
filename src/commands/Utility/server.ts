@@ -1,7 +1,6 @@
 import { MessageEmbed } from 'discord.js';
 import { CommandStore, KlasaMessage } from 'klasa';
 
-import { GuildSettings } from '../../lib/settings/types/GuildSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
 
 export default class extends BotCommand {
@@ -17,13 +16,13 @@ export default class extends BotCommand {
 
 	async run(msg: KlasaMessage, [guild = msg.guild!]) {
 		const embed = new MessageEmbed()
-			.setColor(16098851)
+			.setColor(16_098_851)
 			.setThumbnail(guild.iconURL()!)
 			.setAuthor(guild!.name)
-			.addField('Total Members', guild!.memberCount, true)
+			.addField('Total Members', guild!.memberCount.toString(), true)
 			.addField('Server Creation Date', guild.createdAt.toLocaleDateString(), true)
-			.addField('Bot Prefix', guild.settings.get(GuildSettings.Prefix), true);
+			.addField('Bot Prefix', msg.cmdPrefix, true);
 
-		return msg.send({ embed });
+		return msg.channel.send({ embeds: [embed] });
 	}
 }

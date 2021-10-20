@@ -1,17 +1,18 @@
-import { calcWhatPercent, reduceNumByPercent, Time } from 'e';
-import { CommandStore, KlasaMessage } from 'klasa';
+import { calcWhatPercent, reduceNumByPercent, Time } from "e";
+import { CommandStore, KlasaMessage } from "klasa";
 
-import { Activity, xpBoost } from '../../lib/constants';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { GauntletOptions } from '../../lib/types/minions';
+import { Activity, BitField, xpBoost } from "../../lib/constants";
+import { minionNotBusy } from "../../lib/minions/decorators";
+import { UserSettings } from "../../lib/settings/types/UserSettings";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { GauntletOptions } from "../../lib/types/minions";
 import {
 	formatDuration,
 	formatSkillRequirements,
 	skillsMeetRequirements,
-	toTitleCase
-} from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+	toTitleCase,
+} from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 const baseRequirements = {
 	cooking: 70,
@@ -23,7 +24,7 @@ const baseRequirements = {
 	smithing: 70,
 	herblore: 70,
 	construction: 70,
-	hunter: 70
+	hunter: 70,
 };
 
 const standardRequirements = {
@@ -33,7 +34,7 @@ const standardRequirements = {
 	defence: 80,
 	magic: 80,
 	ranged: 80,
-	prayer: 77
+	prayer: 77,
 };
 
 const corruptedRequirements = {
@@ -45,11 +46,11 @@ const corruptedRequirements = {
 	ranged: 90,
 	prayer: 77,
 	// Skilling
-	cooking: 80,
-	farming: 80,
-	fishing: 80,
-	mining: 80,
-	woodcutting: 80
+	cooking: 70,
+	farming: 70,
+	fishing: 70,
+	mining: 70,
+	woodcutting: 70,
 };
 
 export default class extends BotCommand {
@@ -57,20 +58,27 @@ export default class extends BotCommand {
 		super(store, file, directory, {
 			cooldown: 3,
 			oneAtTime: true,
-			usage: '<corrupted|normal> [quantity:int{1,100}]',
-			usageDelim: ' '
+			usage: "<corrupted|normal> [quantity:int{1,100}]",
+			usageDelim: " ",
 		});
 	}
 
-	async run(msg: KlasaMessage, [type, quantity]: ['corrupted' | 'normal', number | undefined]) {
+	@minionNotBusy
+	async run(
+		msg: KlasaMessage,
+		[type, quantity]: ["corrupted" | "normal", number | undefined]
+	) {
 		if (msg.author.settings.get(UserSettings.QP) < 200) {
-			return msg.send(`You need atleast 200 QP to do the Gauntlet.`);
+			return msg.channel.send(
+				"You need atleast 200 QP to do the Gauntlet."
+			);
 		}
 		const readableName = `${toTitleCase(type)} Gauntlet`;
-		const requiredSkills = type === 'corrupted' ? corruptedRequirements : standardRequirements;
+		const requiredSkills =
+			type === "corrupted" ? corruptedRequirements : standardRequirements;
 
 		if (!skillsMeetRequirements(msg.author.rawSkills, requiredSkills)) {
-			return msg.send(
+			return msg.channel.send(
 				`You don't have the required stats to do the ${readableName}, you need: ${formatSkillRequirements(
 					requiredSkills
 				)}.`
@@ -78,31 +86,48 @@ export default class extends BotCommand {
 		}
 
 		const [corruptedKC, normalKC] = await Promise.all([
-			msg.author.getMinigameScore('CorruptedGauntlet'),
-			msg.author.getMinigameScore('Gauntlet')
+			msg.author.getMinigameScore("CorruptedGauntlet"),
+			msg.author.getMinigameScore("Gauntlet"),
 		]);
 
-		if (type === 'corrupted' && normalKC < 50) {
-			return msg.send(
-				`You can't attempt the Corrupted Gauntlet, you have less than 50 normal Gauntlets completed - you would not stand a chance in the Corrupted Gauntlet!`
+		if (type === "corrupted" && normalKC < 50) {
+			return msg.channel.send(
+				"You can't attempt the Corrupted Gauntlet, you have less than 50 normal Gauntlets completed - you would not stand a chance in the Corrupted Gauntlet!"
 			);
 		}
 
-		let baseLength = type === 'corrupted' ? Time.Minute * 10 : Time.Minute * 14;
+		let baseLength =
+			type === "corrupted" ? Time.Minute * 10 : Time.Minute * 14;
 
 		const boosts = [];
 
 		const scoreBoost =
-			Math.min(100, calcWhatPercent(type === 'corrupted' ? corruptedKC : normalKC, 100)) / 5;
+			Math.min(
+				100,
+				calcWhatPercent(
+					type === "corrupted" ? corruptedKC : normalKC,
+					100
+				)
+			) / 5;
 		if (scoreBoost > 1) {
 			baseLength = reduceNumByPercent(baseLength, scoreBoost);
 			boosts.push(`${scoreBoost}% boost for experience in the minigame`);
 		}
 
-		let gauntletLength = baseLength;
-		if (type === 'corrupted') gauntletLength *= 2;
+		if (msg.author.bitfield.includes(BitField.HasArcaneScroll)) {
+			boosts.push("3% for Augury");
+			baseLength = reduceNumByPercent(baseLength, 3);
+		}
 
-		const maxTripLength = 200984200 
+		if (msg.author.bitfield.includes(BitField.HasDexScroll)) {
+			boosts.push("3% for Rigour");
+			baseLength = reduceNumByPercent(baseLength, 3);
+		}
+
+		let gauntletLength = baseLength;
+		if (type === "corrupted") gauntletLength *= 1.3;
+
+		const maxTripLength = 200984200;
 
 		if (!quantity) {
 			quantity = Math.floor(maxTripLength / gauntletLength);
@@ -110,8 +135,10 @@ export default class extends BotCommand {
 		const duration = quantity * gauntletLength * xpBoost;
 
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of ${readableName} you can do is ${Math.floor(
 					maxTripLength / gauntletLength
@@ -119,20 +146,23 @@ export default class extends BotCommand {
 			);
 		}
 
-		await addSubTaskToActivityTask<GauntletOptions>(this.client, {
+		await addSubTaskToActivityTask<GauntletOptions>({
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
 			type: Activity.Gauntlet,
-			corrupted: type === 'corrupted'
+			corrupted: type === "corrupted",
 		});
 
-		const boostsStr = boosts.length > 0 ? `**Boosts:** ${boosts.join('\n')}` : '';
+		const boostsStr =
+			boosts.length > 0 ? `**Boosts:** ${boosts.join(", ")}` : "";
 
-		return msg.send(`${
+		return msg.channel.send(`${
 			msg.author.minionName
-		} is now doing ${quantity}x ${readableName}. The trip will take ${formatDuration(duration)}.
+		} is now doing ${quantity}x ${readableName}. The trip will take ${formatDuration(
+			duration
+		)}.
 ${boostsStr}
 `);
 	}

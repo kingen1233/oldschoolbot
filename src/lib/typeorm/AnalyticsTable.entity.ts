@@ -36,9 +36,6 @@ export class AnalyticsTable extends BaseEntity {
 	public totalGP!: number;
 
 	@Column({ type: 'bigint', nullable: true })
-	public totalXP!: number;
-
-	@Column({ type: 'bigint', nullable: true })
 	public dicingBank!: number;
 
 	@Column({ type: 'bigint', nullable: true })
@@ -46,4 +43,25 @@ export class AnalyticsTable extends BaseEntity {
 
 	@Column({ type: 'bigint', nullable: true })
 	public dailiesAmount!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpSellingItems!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpPvm!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpAlching!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpPickpocket!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpDice!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpOpen!: number;
+
+	@Column({ type: 'bigint', nullable: true })
+	public gpDaily!: number;
 }

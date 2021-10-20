@@ -5,12 +5,7 @@ export const courses: Course[] = [
 	{
 		id: 1,
 		name: 'Gnome Stronghold Agility Course',
-		aliases: [
-			'gnome',
-			'gnome stronghold',
-			'gnome stronghold agility',
-			'gnome stronghold agility course'
-		],
+		aliases: ['gnome', 'gnome stronghold', 'gnome stronghold agility', 'gnome stronghold agility course'],
 		level: 1,
 		xp: 88,
 		lapTime: 34,
@@ -19,12 +14,7 @@ export const courses: Course[] = [
 	{
 		id: 2,
 		name: 'Draynor Village Rooftop Course',
-		aliases: [
-			'draynor',
-			'draynor village',
-			'draynor village rooftop',
-			'draynor village rooftop course'
-		],
+		aliases: ['draynor', 'draynor village', 'draynor village rooftop', 'draynor village rooftop course'],
 		level: 10,
 		xp: 120,
 		marksPer60: 12,
@@ -84,13 +74,8 @@ export const courses: Course[] = [
 	},
 	{
 		id: 8,
-		name: `Seers' Village Rooftop Course`,
-		aliases: [
-			'seers',
-			'seers village',
-			'seers village rooftop',
-			'seers village rooftop course'
-		],
+		name: "Seers' Village Rooftop Course",
+		aliases: ['seers', 'seers village', 'seers village rooftop', 'seers village rooftop course'],
 		level: 60,
 		xp: 570,
 		marksPer60: 12,
@@ -134,7 +119,18 @@ export const courses: Course[] = [
 		level: 30,
 		xp: 540,
 		lapTime: 65.6,
-		petChance: 9_979
+		petChance: 9979
+	},
+	{
+		id: 13,
+		name: 'Prifddinas Rooftop Course',
+		aliases: ['priff', 'prif', 'prifddinas', 'prifddinas course', 'prifddinas agility course'],
+		level: 75,
+		xp: 1340.6,
+		marksPer60: 0,
+		lapTime: 74.2,
+		petChance: 25_146,
+		qpRequired: 205
 	}
 ];
 
@@ -151,32 +147,32 @@ export const gracefulItems = [
 
 export const MonkeyBackpacks = [
 	{
-		id: 24862,
+		id: 24_862,
 		name: 'Karamjan monkey',
 		lapsRequired: 100
 	},
 	{
-		id: 24863,
+		id: 24_863,
 		name: 'Zombie monkey',
 		lapsRequired: 250
 	},
 	{
-		id: 24864,
+		id: 24_864,
 		name: 'Maniacal monkey',
 		lapsRequired: 500
 	},
 	{
-		id: 24865,
+		id: 24_865,
 		name: 'Skeleton monkey',
 		lapsRequired: 1000
 	},
 	{
-		id: 24866,
+		id: 24_866,
 		name: 'Kruk jr',
 		lapsRequired: 1500
 	},
 	{
-		id: 24867,
+		id: 24_867,
 		name: 'Princely monkey',
 		lapsRequired: 2000
 	}

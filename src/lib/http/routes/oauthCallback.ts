@@ -13,7 +13,7 @@ export async function fetchUser(token: string) {
 	const apiUser = await fetch('https://discordapp.com/api/users/@me', {
 		headers: { Authorization: apiToken }
 	}).then((result: any) => result.json());
-	const user = await client.users.fetch(apiUser.id);
+	const user = await client.fetchUser(apiUser.id);
 
 	return {
 		...apiUser,
@@ -40,9 +40,7 @@ const oauthCallbackRoute = (server: FastifyInstance) =>
 		async handler(request, reply) {
 			const authFetch = await fetch('https://discord.com/api/oauth2/token', {
 				headers: {
-					Authorization: `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString(
-						'base64'
-					)}`,
+					Authorization: `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`,
 					'Content-Type': 'application/x-www-form-urlencoded'
 				},
 				body: encode({

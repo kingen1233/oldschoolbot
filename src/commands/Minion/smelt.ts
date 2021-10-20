@@ -1,22 +1,20 @@
-import { CommandStore, KlasaMessage } from 'klasa';
+import { CommandStore, KlasaMessage } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
-import Smithing from '../../lib/skilling/skills/smithing';
-import { SkillsEnum } from '../../lib/skilling/types';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { ItemBank } from '../../lib/types';
-import { SmeltingActivityTaskOptions } from '../../lib/types/minions';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { ClientSettings } from "../../lib/settings/types/ClientSettings";
+import Smithing from "../../lib/skilling/skills/smithing";
+import { SkillsEnum } from "../../lib/skilling/types";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { SmeltingActivityTaskOptions } from "../../lib/types/minions";
 import {
-	bankHasItem,
 	formatDuration,
 	itemID,
-	itemNameFromID,
-	removeItemFromBank,
-	stringMatches
-} from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+	stringMatches,
+	updateBankSetting,
+} from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -24,37 +22,42 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '<quantity:int{1}|name:...string> [name:...string]',
-			usageDelim: ' ',
-			categoryFlags: ['minion', 'skilling'],
-			description: 'Sends your minion to smelt items, which is turning ores into bars.',
-			examples: ['+smelt bronze']
+			usage: "<quantity:int{1}|name:...string> [name:...string]",
+			usageDelim: " ",
+			categoryFlags: ["minion", "skilling"],
+			description:
+				"Sends your minion to smelt items, which is turning ores into bars.",
+			examples: ["+smelt bronze"],
 		});
 	}
 
 	@requiresMinion
 	@minionNotBusy
-	async run(msg: KlasaMessage, [quantity, barName = '']: [null | number | string, string]) {
-		if (typeof quantity === 'string') {
+	async run(
+		msg: KlasaMessage,
+		[quantity, barName = ""]: [null | number | string, string]
+	) {
+		if (typeof quantity === "string") {
 			barName = quantity;
 			quantity = null;
 		}
 
 		const bar = Smithing.Bars.find(
-			bar =>
-				stringMatches(bar.name, barName) || stringMatches(bar.name.split(' ')[0], barName)
+			(bar) =>
+				stringMatches(bar.name, barName) ||
+				stringMatches(bar.name.split(" ")[0], barName)
 		);
 
 		if (!bar) {
-			return msg.send(
+			return msg.channel.send(
 				`Thats not a valid bar to smelt. Valid bars are ${Smithing.Bars.map(
-					bar => bar.name
-				).join(', ')}.`
+					(bar) => bar.name
+				).join(", ")}.`
 			);
 		}
 
 		if (msg.author.skillLevel(SkillsEnum.Smithing) < bar.level) {
-			return msg.send(
+			return msg.channel.send(
 				`${msg.author.minionName} needs ${bar.level} Smithing to smelt ${bar.name}s.`
 			);
 		}
@@ -62,70 +65,74 @@ export default class extends BotCommand {
 		// All bars take 2.4s to smith, add on quarter of a second to account for banking/etc.
 		const timeToSmithSingleBar = Time.Second * 2.4 + Time.Second / 4;
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 200984200;
 
 		// If no quantity provided, set it to the max.
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timeToSmithSingleBar);
 		}
 
-		await msg.author.settings.sync(true);
-		const userBank = msg.author.settings.get(UserSettings.Bank);
+		const baseCost = new Bank(bar.inputOres);
 
-		// Check the user has the required ores to smith these bars.
-		// Multiplying the ore required by the quantity of bars.
-		const requiredOres: [string, number][] = Object.entries(bar.inputOres);
-		for (const [oreID, qty] of requiredOres) {
-			if (!bankHasItem(userBank, parseInt(oreID), qty * quantity)) {
-				return msg.send(`You don't have enough ${itemNameFromID(parseInt(oreID))}.`);
-			}
+		const maxCanDo = msg.author.bank().fits(baseCost);
+		if (maxCanDo === 0) {
+			return msg.channel.send(
+				"You don't have enough supplies to smelt even one of this item!"
+			);
 		}
+		if (maxCanDo < quantity) {
+			quantity = maxCanDo;
+		}
+
+		const cost = new Bank();
+		cost.add(baseCost.multiply(quantity));
 
 		const duration = quantity * timeToSmithSingleBar * xpBoost;
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of ${
 					bar.name
-				}s you can smelt is ${Math.floor(maxTripLength / timeToSmithSingleBar)}.`
+				}s you can smelt is ${Math.floor(
+					maxTripLength / timeToSmithSingleBar
+				)}.`
 			);
 		}
 
-		// Remove the ores from their bank.
-		let newBank: ItemBank = { ...userBank };
-		for (const [oreID, qty] of requiredOres) {
-			if (newBank[parseInt(oreID)] < qty) {
-				this.client.wtf(
-					new Error(`${msg.author.sanitizedName} had insufficient ores to be removed.`)
-				);
-				return;
-			}
-			newBank = removeItemFromBank(newBank, parseInt(oreID), qty * quantity);
-		}
+		await msg.author.removeItemsFromBank(cost);
+		updateBankSetting(
+			this.client,
+			ClientSettings.EconomyStats.SmithingCost,
+			cost
+		);
 
-		await addSubTaskToActivityTask<SmeltingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<SmeltingActivityTaskOptions>({
 			barID: bar.id,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.Smelting
+			type: Activity.Smelting,
 		});
-		await msg.author.settings.update(UserSettings.Bank, newBank);
 
-		let goldGauntletMessage = ``;
+		let goldGauntletMessage = "";
 		if (
-			bar.id === itemID('Gold bar') &&
-			msg.author.hasItemEquippedAnywhere(itemID('Goldsmith gauntlets'))
+			bar.id === itemID("Gold bar") &&
+			msg.author.hasItemEquippedAnywhere("Goldsmith gauntlets")
 		) {
-			goldGauntletMessage = `\n\n**Boosts:** 56.2 xp per gold bar for Goldsmith gauntlets.`;
+			goldGauntletMessage =
+				"\n\n**Boosts:** 56.2 xp per gold bar for Goldsmith gauntlets.";
 		}
 
-		return msg.send(
+		return msg.channel.send(
 			`${msg.author.minionName} is now smelting ${quantity}x ${
 				bar.name
-			}, it'll take around ${formatDuration(duration)} to finish.${goldGauntletMessage}`
+			}, it'll take around ${formatDuration(
+				duration
+			)} to finish.${goldGauntletMessage}`
 		);
 	}
 }

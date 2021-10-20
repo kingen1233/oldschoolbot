@@ -2,6 +2,7 @@ import { Bank } from 'oldschooljs';
 import LootTable from 'oldschooljs/dist/structures/LootTable';
 
 import { Emoji } from '../constants';
+import { SlayerTaskUnlocksEnum } from '../slayer/slayerUnlocks';
 import { ItemBank } from '../types';
 
 export enum SkillsEnum {
@@ -47,6 +48,7 @@ export interface Log {
 	xp: number;
 	id: number;
 	name: string;
+	aliases?: string[];
 	respawnTime: number;
 	petChance?: number;
 	qpRequired: number;
@@ -93,6 +95,8 @@ export interface Rune {
 	name: string;
 	qpRequired?: number;
 	tripLength: number;
+	inputRune?: Bank;
+	inputTalisman?: Bank;
 }
 
 export interface Cookable {
@@ -139,13 +143,15 @@ export interface SmithedItem {
 
 export interface Craftable {
 	name: string;
+	alias?: string[];
 	id: number;
 	level: number;
 	xp: number;
-	inputItems: ItemBank;
+	inputItems: Bank;
 	tickRate: number;
 	crushChance?: number[];
 	bankChest?: boolean;
+	outputMultiple?: number;
 }
 
 export interface Fletchable {
@@ -156,6 +162,7 @@ export interface Fletchable {
 	inputItems: Bank;
 	tickRate: number;
 	outputMultiple?: number;
+	requiredSlayerUnlocks?: SlayerTaskUnlocksEnum[];
 }
 
 export interface Mixable {
@@ -240,6 +247,7 @@ export interface Plant {
 
 export enum HunterTechniqueEnum {
 	AerialFishing = 'aerial fishing',
+	DriftNet = 'drift net fishing',
 	BirdSnaring = 'bird snaring',
 	BoxTrapping = 'box trapping',
 	ButterflyNetting = 'butterfly netting',

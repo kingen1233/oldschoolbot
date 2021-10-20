@@ -1,25 +1,26 @@
+import { randInt } from 'e';
 import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank, Misc, Openables } from 'oldschooljs';
+import Openable from 'oldschooljs/dist/structures/Openable';
 
-import { Events, MIMIC_MONSTER_ID } from '../../lib/constants';
-import { cluesRares } from '../../lib/data/collectionLog';
+import { COINS_ID, Events, MIMIC_MONSTER_ID } from '../../lib/constants';
+import { cluesRaresCL } from '../../lib/data/CollectionsExport';
 import botOpenables from '../../lib/data/openables';
+import { emojiMap } from '../../lib/itemEmojiMap';
 import ClueTiers from '../../lib/minions/data/clueTiers';
 import { ClueTier } from '../../lib/minions/types';
+import { ClientSettings } from '../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
-import { addBanks, roll, stringMatches } from '../../lib/util';
+import { addBanks, roll, stringMatches, updateGPTrackSetting } from '../../lib/util';
 import { formatOrdinal } from '../../lib/util/formatOrdinal';
 import itemID from '../../lib/util/itemID';
 
-const itemsToNotifyOf = Object.values(cluesRares)
-	.flat(Infinity)
-	.concat(
-		ClueTiers.filter(i => Boolean(i.milestoneReward)).map(i => i.milestoneReward!.itemReward)
-	)
+const itemsToNotifyOf = cluesRaresCL
+	.concat(ClueTiers.filter(i => Boolean(i.milestoneReward)).map(i => i.milestoneReward!.itemReward))
 	.concat([itemID('Bloodhound')]);
 
-const allOpenables = [
+export const allOpenables = [
 	...Openables.map(i => i.id),
 	...ClueTiers.map(i => i.id),
 	...botOpenables.map(i => i.itemID)
@@ -43,15 +44,21 @@ export default class extends BotCommand {
 		const available = msg.author.bank().filter(i => allOpenables.includes(i.id));
 
 		if (available.length === 0) {
-			return `You have no openable items.`;
+			return 'You have no openable items.';
 		}
 
-		return `You have ${available}.`;
+		let results = [];
+		for (const [item, qty] of available.items()) {
+			let emoji = emojiMap.get(item.id) ?? '';
+			results.push(`${emoji}${qty}x ${item.name}`);
+		}
+
+		return `You have ${results.join(', ')}.`;
 	}
 
 	async run(msg: KlasaMessage, [quantity = 1, name]: [number, string | undefined]) {
 		if (!name) {
-			return msg.send(await this.showAvailable(msg));
+			return msg.channel.send(await this.showAvailable(msg));
 		}
 
 		await msg.author.settings.sync(true);
@@ -60,9 +67,7 @@ export default class extends BotCommand {
 			return this.clueOpen(msg, quantity, clue);
 		}
 
-		const osjsOpenable = Openables.find(openable =>
-			openable.aliases.some(alias => stringMatches(alias, name))
-		);
+		const osjsOpenable = Openables.find(openable => openable.aliases.some(alias => stringMatches(alias, name)));
 		if (osjsOpenable) {
 			return this.osjsOpenablesOpen(msg, quantity, osjsOpenable);
 		}
@@ -71,15 +76,15 @@ export default class extends BotCommand {
 	}
 
 	async clueOpen(msg: KlasaMessage, quantity: number, clueTier: ClueTier) {
-		if (msg.author.numItemsInBankSync(clueTier.id) < quantity) {
-			return msg.send(
-				`You don't have enough ${
-					clueTier.name
-				} Caskets to open!\n\n However... ${await this.showAvailable(msg)}`
+		if (msg.author.bank().amount(clueTier.id) < quantity) {
+			return msg.channel.send(
+				`You don't have enough ${clueTier.name} Caskets to open!\n\n However... ${await this.showAvailable(
+					msg
+				)}`
 			);
 		}
 
-		await msg.author.removeItemFromBank(clueTier.id, quantity);
+		await msg.author.removeItemsFromBank(new Bank().add(clueTier.id, quantity));
 
 		let loot = clueTier.table.open(quantity);
 
@@ -93,12 +98,11 @@ export default class extends BotCommand {
 			}
 		}
 
-		const opened = `You opened ${quantity} ${clueTier.name} Clue Casket${
-			quantity > 1 ? 's' : ''
-		} ${mimicNumber > 0 ? `with ${mimicNumber} mimic${mimicNumber > 1 ? 's' : ''}` : ''}`;
+		const opened = `You opened ${quantity} ${clueTier.name} Clue Casket${quantity > 1 ? 's' : ''} ${
+			mimicNumber > 0 ? `with ${mimicNumber} mimic${mimicNumber > 1 ? 's' : ''}` : ''
+		}`;
 
-		const nthCasket =
-			(msg.author.settings.get(UserSettings.ClueScores)[clueTier.id] ?? 0) + quantity;
+		const nthCasket = (msg.author.settings.get(UserSettings.ClueScores)[clueTier.id] ?? 0) + quantity;
 
 		// If this tier has a milestone reward, and their new score meets the req, and
 		// they don't own it already, add it to the loot.
@@ -116,16 +120,14 @@ export default class extends BotCommand {
 		if (announcedLoot.length > 0) {
 			this.client.emit(
 				Events.ServerNotification,
-				`**${msg.author.username}'s** minion, ${
-					msg.author.minionName
-				}, just opened their ${formatOrdinal(nthCasket)} ${
-					clueTier.name
-				} casket and received **${announcedLoot}**!`
+				`**${msg.author.username}'s** minion, ${msg.author.minionName}, just opened their ${formatOrdinal(
+					nthCasket
+				)} ${clueTier.name} casket and received **${announcedLoot}**!`
 			);
 		}
 
 		if (Object.keys(loot).length === 0) {
-			return msg.send(`${opened} and got nothing :(`);
+			return msg.channel.send(`${opened} and got nothing :(`);
 		}
 
 		this.client.emit(
@@ -135,6 +137,9 @@ export default class extends BotCommand {
 
 		const previousCL = msg.author.settings.get(UserSettings.CollectionLogBank);
 		await msg.author.addItemsToBank(loot, true);
+		if (typeof loot[COINS_ID] === 'number') {
+			updateGPTrackSetting(this.client, ClientSettings.EconomyStats.GPSourceOpen, loot[COINS_ID]);
+		}
 
 		msg.author.incrementClueScore(clueTier.id, quantity);
 
@@ -148,50 +153,50 @@ export default class extends BotCommand {
 			bank: loot,
 			content: `You have completed ${nthCasket} ${clueTier.name.toLowerCase()} Treasure Trails.`,
 			title: opened,
-			flags: { showNewCL: 1 },
+			flags: { showNewCL: 1, ...msg.flagArgs },
 			user: msg.author,
 			cl: previousCL
 		});
 	}
 
-	async osjsOpenablesOpen(msg: KlasaMessage, quantity: number, osjsOpenable: any) {
-		if (msg.author.numItemsInBankSync(osjsOpenable.id) < quantity) {
-			return msg.send(
-				`You don't have enough ${
-					osjsOpenable.name
-				} to open!\n\n However... ${await this.showAvailable(msg)}`
+	async osjsOpenablesOpen(msg: KlasaMessage, quantity: number, osjsOpenable: Openable) {
+		if (msg.author.bank().amount(osjsOpenable.id) < quantity) {
+			return msg.channel.send(
+				`You don't have enough ${osjsOpenable.name} to open!\n\n However... ${await this.showAvailable(msg)}`
 			);
 		}
 
-		await msg.author.removeItemFromBank(osjsOpenable.id, quantity);
+		await msg.author.removeItemsFromBank(new Bank().add(osjsOpenable.id, quantity));
 
-		const loot = osjsOpenable.open(quantity);
-
+		const loot = osjsOpenable.open(quantity, {});
+		const score = msg.author.getOpenableScore(osjsOpenable.id) + quantity;
 		this.client.emit(
 			Events.Log,
 			`${msg.author.username}[${msg.author.id}] opened ${quantity} ${osjsOpenable.name}.`
 		);
 
-		msg.author.incrementOpenableScore(osjsOpenable.itemID, quantity);
+		msg.author.incrementOpenableScore(osjsOpenable.id, quantity);
 		const previousCL = msg.author.settings.get(UserSettings.CollectionLogBank);
 		await msg.author.addItemsToBank(loot, true);
+		if (typeof loot[COINS_ID] === 'number') {
+			updateGPTrackSetting(this.client, ClientSettings.EconomyStats.GPSourceOpen, loot[COINS_ID]);
+		}
 
 		return msg.channel.sendBankImage({
 			bank: loot,
+			content: `You have opened the ${osjsOpenable.name.toLowerCase()} ${score.toLocaleString()} times.`,
 			title: `You opened ${quantity} ${osjsOpenable.name}`,
-			flags: { showNewCL: 1 },
+			flags: { showNewCL: 1, ...msg.flagArgs },
 			user: msg.author,
 			cl: previousCL
 		});
 	}
 
 	async botOpenablesOpen(msg: KlasaMessage, quantity: number, name: string) {
-		const botOpenable = botOpenables.find(thing =>
-			thing.aliases.some(alias => stringMatches(alias, name))
-		);
+		const botOpenable = botOpenables.find(thing => thing.aliases.some(alias => stringMatches(alias, name)));
 
 		if (!botOpenable) {
-			return msg.send(
+			return msg.channel.send(
 				`That's not a valid thing you can open. You can open a clue tier (${ClueTiers.map(
 					tier => tier.name
 				).join(', ')}), or another non-clue thing (${botOpenables
@@ -201,43 +206,51 @@ export default class extends BotCommand {
 			);
 		}
 
-		if (msg.author.numItemsInBankSync(botOpenable.itemID) < quantity) {
-			return msg.send(
-				`You don't have enough ${
-					botOpenable.name
-				} to open!\n\n However... ${await this.showAvailable(msg)}`
+		if (msg.author.bank().amount(botOpenable.itemID) < quantity) {
+			return msg.channel.send(
+				`You don't have enough ${botOpenable.name} to open!\n\n However... ${await this.showAvailable(msg)}`
 			);
 		}
 
-		await msg.author.removeItemFromBank(botOpenable.itemID, quantity);
+		await msg.author.removeItemsFromBank(new Bank().add(botOpenable.itemID, quantity));
 
-		const loot = new Bank();
-		const score = msg.author.getOpenableScore(itemID('Spoils of war'));
-		for (let i = 0; i < quantity; i++) {
-			const rollLoot = botOpenable.table.roll();
-			if (rollLoot.some(i => i.item === itemID("Lil' creator"))) {
-				this.client.emit(
-					Events.ServerNotification,
-					`<:lil_creator:798221383951319111> **${msg.author.username}'s** minion, ${
-						msg.author.minionName
-					}, just received a Lil' creator! They've done ${await msg.author.getMinigameScore(
-						'SoulWars'
-					)} Soul wars games, and this is their ${formatOrdinal(
-						score + i
-					)} Spoils of war crate.`
-				);
-			}
-			loot.add(rollLoot);
+		const score = msg.author.getOpenableScore(botOpenable.itemID);
+		const loot = botOpenable.table.roll(quantity);
+
+		const nthOpenable = formatOrdinal(score + randInt(1, quantity));
+
+		if (loot.has("Lil' creator")) {
+			this.client.emit(
+				Events.ServerNotification,
+				`<:lil_creator:798221383951319111> **${msg.author.username}'s** minion, ${
+					msg.author.minionName
+				}, just received a Lil' creator! They've done ${await msg.author.getMinigameScore(
+					'SoulWars'
+				)} Soul wars games, and this is their ${nthOpenable} Spoils of war crate.`
+			);
+		}
+
+		if (botOpenable.itemID === itemID('Bag full of gems') && loot.has('Uncut onyx')) {
+			this.client.emit(
+				Events.ServerNotification,
+				`${msg.author} just received an Uncut Onyx from their ${nthOpenable} Bag full of gems!`
+			);
 		}
 
 		msg.author.incrementOpenableScore(botOpenable.itemID, quantity);
 		const previousCL = msg.author.settings.get(UserSettings.CollectionLogBank);
-		await msg.author.addItemsToBank(loot.values(), true);
+		await msg.author.addItemsToBank(loot.values(), true, false);
+		if (loot.amount('Coins') > 0) {
+			updateGPTrackSetting(this.client, ClientSettings.EconomyStats.GPSourceOpen, loot.amount('Coins'));
+		}
 
 		return msg.channel.sendBankImage({
 			bank: loot.values(),
+			content: `You have opened the ${botOpenable.name.toLowerCase()} ${(
+				score + quantity
+			).toLocaleString()} times.`,
 			title: `You opened ${quantity} ${botOpenable.name}`,
-			flags: { showNewCL: 1 },
+			flags: { showNewCL: 1, ...msg.flagArgs },
 			user: msg.author,
 			cl: previousCL
 		});

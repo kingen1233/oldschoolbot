@@ -1,19 +1,16 @@
-import { Client as TagsClient } from '@kcp/tags';
 import { Client, KlasaClientOptions } from 'klasa';
 import { join } from 'path';
 import { Connection, createConnection } from 'typeorm';
 
 import { providerConfig } from '../../config';
-import { clientOptions } from '../config/config';
-import { ActivityTable } from '../typeorm/ActivityTable.entity';
+import { clientOptions } from '../config';
+import { getGuildSettings, syncActivityCache } from '../settings/settings';
 import { piscinaPool } from '../workers';
-
-Client.use(TagsClient);
 
 const { production } = clientOptions;
 
 if (typeof production !== 'boolean') {
-	throw new Error(`Must provide production boolean.`);
+	throw new Error('Must provide production boolean.');
 }
 
 const { port, user, password, database } = providerConfig!.postgres!;
@@ -28,8 +25,6 @@ export class OldSchoolBotClient extends Client {
 	public piscinaPool = piscinaPool;
 	public production = production ?? false;
 	public orm!: Connection;
-
-	public minionActivityCache = new Map<string, ActivityTable['taskData']>();
 
 	public constructor(clientOptions: KlasaClientOptions) {
 		super(clientOptions);
@@ -47,35 +42,17 @@ export class OldSchoolBotClient extends Client {
 			synchronize: !production
 		});
 
-		await this.syncActivityCache();
+		for (const guild of this.guilds.cache.values()) {
+			getGuildSettings(guild);
+		}
 
+		await syncActivityCache();
 		return super.login(token);
 	}
 
-	public async syncActivityCache() {
-		const tasks = await ActivityTable.find({
-			where: {
-				completed: false
-			}
-		});
-		this.minionActivityCache.clear();
-		for (const task of tasks) {
-			for (const u of task.getUsers()) {
-				this.minionActivityCache.set(u, task.taskData);
-			}
-		}
-	}
-
-	async cancelTask(userID: string) {
-		await ActivityTable.delete({
-			userID,
-			completed: false
-		});
-		this.minionActivityCache.delete(userID);
-	}
-
-	getActivityOfUser(userID: string) {
-		const task = this.minionActivityCache.get(userID);
-		return task ?? null;
+	async fetchUser(id: string) {
+		const user = await this.users.fetch(id);
+		await user.settings.sync();
+		return user;
 	}
 }

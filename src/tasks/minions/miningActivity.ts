@@ -1,9 +1,8 @@
-import { roll } from 'e';
+import { roll, Time } from 'e';
 import { Task } from 'klasa';
 import { Bank } from 'oldschooljs';
 
-import { Emoji, Events, Time } from '../../lib/constants';
-import { hasArrayOfItemsEquipped } from '../../lib/gear';
+import { Emoji, Events } from '../../lib/constants';
 import addSkillingClueToLoot from '../../lib/minions/functions/addSkillingClueToLoot';
 import Mining from '../../lib/skilling/skills/mining';
 import { SkillsEnum } from '../../lib/skilling/types';
@@ -14,7 +13,7 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: MiningActivityTaskOptions) {
 		const { oreID, quantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const ore = Mining.Ores.find(ore => ore.id === oreID)!;
 
@@ -23,9 +22,9 @@ export default class extends Task {
 
 		// If they have the entire prospector outfit, give an extra 0.5% xp bonus
 		if (
-			hasArrayOfItemsEquipped(
+			user.getGear('skilling').hasEquipped(
 				Object.keys(Mining.prospectorItems).map(i => parseInt(i)),
-				user.getGear('skilling')
+				true
 			)
 		) {
 			const amountToAdd = Math.floor(xpReceived * (2.5 / 100));
@@ -42,7 +41,11 @@ export default class extends Task {
 			}
 		}
 		const currentLevel = user.skillLevel(SkillsEnum.Mining);
-		const xpRes = await user.addXP(SkillsEnum.Mining, xpReceived, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Mining,
+			amount: xpReceived,
+			duration
+		});
 
 		let str = `${user}, ${user.minionName} finished mining ${quantity} ${ore.name}. ${xpRes}`;
 
@@ -56,7 +59,7 @@ export default class extends Task {
 		// Roll for pet
 		if (ore.petChance && roll((ore.petChance - currentLevel * 25) / quantity)) {
 			loot.add('Rock golem');
-			str += `\nYou have a funny feeling you're being followed...`;
+			str += "\nYou have a funny feeling you're being followed...";
 			this.client.emit(
 				Events.ServerNotification,
 				`${Emoji.Mining} **${user.username}'s** minion, ${user.minionName}, just received a Rock golem while mining ${ore.name} at level ${currentLevel} Mining!`
@@ -83,6 +86,23 @@ export default class extends Task {
 		if (ore.id === 1625) {
 			for (let i = 0; i < quantity; i++) {
 				loot.add(Mining.GemRockTable.roll());
+			}
+		} else if (ore.id === 21_622) {
+			// Volcanic ash
+			const userLevel = user.skillLevel(SkillsEnum.Mining);
+			const tiers = [
+				[22, 1],
+				[37, 2],
+				[52, 3],
+				[67, 4],
+				[82, 5],
+				[97, 6]
+			];
+			for (const [lvl, multiplier] of tiers.reverse()) {
+				if (userLevel >= lvl) {
+					loot.add(ore.id, quantity * multiplier);
+					break;
+				}
 			}
 		} else {
 			loot.add(ore.id, quantity);

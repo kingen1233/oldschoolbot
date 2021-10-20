@@ -27,20 +27,16 @@ export default class extends BotCommand {
 
 			const embed = new MessageEmbed()
 				.setAuthor(username)
-				.setColor(52224)
+				.setColor(52_224)
 				.setThumbnail('https://i.imgur.com/8hPO17o.png')
 				.addField(
 					'<:BH_Hunter:365046748022046723> Bounty Hunter - Hunter',
-					`**Rank:** ${renderVal(bountyHunter.rank)}\n**Score:** ${renderVal(
-						bountyHunter.score
-					)}`,
+					`**Rank:** ${renderVal(bountyHunter.rank)}\n**Score:** ${renderVal(bountyHunter.score)}`,
 					true
 				)
 				.addField(
 					'<:BH_Rogue:365046748495740928> Bounty Hunter - Rogue',
-					`**Rank:** ${renderVal(bountyHunterRogue.rank)}\n**Score:** ${renderVal(
-						bountyHunterRogue.score
-					)}`,
+					`**Rank:** ${renderVal(bountyHunterRogue.rank)}\n**Score:** ${renderVal(bountyHunterRogue.score)}`,
 					true
 				)
 				.addField(
@@ -48,9 +44,9 @@ export default class extends BotCommand {
 					`**Rank:** ${renderVal(LMS.rank)}\n**Score:** ${renderVal(LMS.score)}`,
 					true
 				);
-			return msg.send({ embed });
+			return msg.channel.send({ embeds: [embed] });
 		} catch (err) {
-			return msg.send(err.message);
+			return msg.channel.send(err.message);
 		}
 	}
 }

@@ -8,7 +8,7 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: HerbloreActivityTaskOptions) {
 		let { mixableID, quantity, zahur, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const mixableItem = Herblore.Mixables.find(mixable => mixable.id === mixableID)!;
 
@@ -18,7 +18,11 @@ export default class extends Task {
 			quantity *= mixableItem.outputMultiple;
 		}
 
-		const xpRes = await user.addXP(SkillsEnum.Herblore, xpReceived, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Herblore,
+			amount: xpReceived,
+			duration
+		});
 
 		let str = `${user}, ${user.minionName} finished making ${quantity} ${mixableItem.name}s. ${xpRes}`;
 

@@ -22,29 +22,26 @@ export default class extends BotCommand {
 		await msg.author.settings.sync(true);
 		const userBank = msg.author.settings.get(UserSettings.Bank);
 
-		const { potionsToAdd, sumOfPots, potionName, finalUserBank } = decantPotionFromBank(
-			userBank,
-			itemName,
-			dose
-		);
+		const { potionsToAdd, sumOfPots, potionName, potionsToRemove } = decantPotionFromBank(userBank, itemName, dose);
 
-		await msg.author.settings.update(UserSettings.Bank, finalUserBank);
+		if (!msg.author.owns(potionsToRemove)) {
+			return msg.channel.send(`You don't own ${potionsToRemove}.`);
+		}
+		await msg.author.removeItemsFromBank(potionsToRemove);
+		await msg.author.addItemsToBank(potionsToAdd);
 
 		if (
-			msg.author.hasItemEquippedAnywhere('Iron dagger') &&
-			msg.author.hasItemEquippedAnywhere('Bronze arrow') &&
+			msg.author.hasItemEquippedAnywhere(['Iron dagger', 'Bronze arrow'], true) &&
 			!msg.author.hasItemEquippedOrInBank('Clue hunter gloves')
 		) {
 			await msg.author.addItemsToBank(new Bank({ 'Clue hunter gloves': 1 }), true);
-			msg.send(
-				`\n\nWhile decanting some potions, you find a pair of gloves on the floor and pick them up.`
+			msg.channel.send(
+				'\n\nWhile decanting some potions, you find a pair of gloves on the floor and pick them up.'
 			);
 		}
 
-		return msg.send(
-			`You decanted **${sumOfPots}x ${potionName}${
-				sumOfPots > 0 ? 's' : ''
-			}** into **${new Bank(potionsToAdd)}**.`
+		return msg.channel.send(
+			`You decanted **${sumOfPots}x ${potionName}${sumOfPots > 0 ? 's' : ''}** into **${potionsToAdd}**.`
 		);
 	}
 }

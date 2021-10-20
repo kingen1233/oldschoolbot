@@ -10,8 +10,9 @@ import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: ZalcanoActivityTaskOptions) {
 		const { channelID, quantity, duration, userID, performance, isMVP } = data;
-		const user = await this.client.users.fetch(userID);
-		user.incrementMonsterScore(ZALCANO_ID, quantity);
+		const user = await this.client.fetchUser(userID);
+		const kc = user.getKC(ZALCANO_ID);
+		await user.incrementMonsterScore(ZALCANO_ID, quantity);
 
 		const loot = new Bank();
 
@@ -30,52 +31,43 @@ export default class extends Task {
 			miningXP += randInt(1100, 1400);
 		}
 
-		let xpRes = await user.addXP(SkillsEnum.Mining, miningXP, duration);
-		xpRes += await user.addXP(SkillsEnum.Smithing, smithingXP);
-		xpRes += await user.addXP(SkillsEnum.Runecraft, runecraftXP);
-
-		const kc = user.getKC(ZALCANO_ID);
+		let xpRes = await user.addXP({
+			skillName: SkillsEnum.Mining,
+			amount: miningXP,
+			duration
+		});
+		xpRes += await user.addXP({ skillName: SkillsEnum.Smithing, amount: smithingXP });
+		xpRes += await user.addXP({ skillName: SkillsEnum.Runecraft, amount: runecraftXP });
 
 		if (loot.amount('Smolcano') > 0) {
 			this.client.emit(
 				Events.ServerNotification,
 				`**${user.username}'s** minion, ${
 					user.minionName
-				}, just received **Smolcano**, their Zalcano KC is ${randInt(
-					kc || 1,
-					(kc || 1) + quantity
-				)}!`
+				}, just received **Smolcano**, their Zalcano KC is ${randInt(kc || 1, (kc || 1) + quantity)}!`
 			);
 		}
 
-		await user.addItemsToBank(loot, true);
+		const { previousCL, itemsAdded } = await user.addItemsToBank(loot, true);
 
 		const { image } = await this.client.tasks
 			.get('bankImage')!
-			.generateBankImage(
-				loot.bank,
-				`Loot From ${quantity}x Zalcano`,
-				true,
-				{ showNewCL: 1 },
-				user
-			);
+			.generateBankImage(itemsAdded, `Loot From ${quantity}x Zalcano`, true, { showNewCL: 1 }, user, previousCL);
 
 		handleTripFinish(
 			this.client,
 			user,
 			channelID,
-			`${user}, ${
-				user.minionName
-			} finished killing ${quantity}x Zalcano. Your Zalcano KC is now ${
+			`${user}, ${user.minionName} finished killing ${quantity}x Zalcano. Your Zalcano KC is now ${
 				kc + quantity
 			}. ${xpRes}`,
 			res => {
-				user.log(`continued zalcano`);
+				user.log('continued zalcano');
 				return this.client.commands.get('zalcano')!.run(res, []);
 			},
 			image!,
 			data,
-			loot.bank
+			itemsAdded
 		);
 	}
 }

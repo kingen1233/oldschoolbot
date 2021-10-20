@@ -1,8 +1,7 @@
 import { Time } from 'e';
 import { Task } from 'klasa';
-import { createQueryBuilder, MoreThan } from 'typeorm';
+import { MoreThan } from 'typeorm';
 
-import { production } from '../config';
 import { ActivityGroup } from '../lib/constants';
 import { ClientSettings } from '../lib/settings/types/ClientSettings';
 import { ActivityTable } from '../lib/typeorm/ActivityTable.entity';
@@ -15,29 +14,7 @@ export default class extends Task {
 		if (this.client.analyticsInterval) {
 			clearInterval(this.client.analyticsInterval);
 		}
-		this.client.analyticsInterval = setInterval(
-			this.analyticsTick.bind(this),
-			Time.Minute * 20
-		);
-
-		if (this.client.minionTicker) {
-			clearTimeout(this.client.minionTicker);
-		}
-		const ticker = async () => {
-			try {
-				const query = createQueryBuilder(ActivityTable).select().where('completed = false');
-				if (production) {
-					query.andWhere(`finish_date < now()`);
-				}
-				const result = await query.getMany();
-				await Promise.all(result.map(t => t.complete()));
-			} catch (err) {
-				console.error(err);
-			} finally {
-				this.client.minionTicker = setTimeout(ticker, 5000);
-			}
-		};
-		ticker();
+		this.client.analyticsInterval = setInterval(this.analyticsTick.bind(this), Time.Minute * 5);
 	}
 
 	async run() {
@@ -63,9 +40,7 @@ export default class extends Task {
 			const group = taskGroupFromActivity(task.type);
 
 			if (task.groupActivity) {
-				minionTaskCounts[
-					group
-				] += (task.data as GroupMonsterActivityTaskOptions).users.length;
+				minionTaskCounts[group] += (task.data as GroupMonsterActivityTaskOptions).users.length;
 			} else {
 				minionTaskCounts[group] += 1;
 			}
@@ -73,23 +48,14 @@ export default class extends Task {
 		return minionTaskCounts;
 	}
 
-	generateTotalXPQuery() {
-		const skillNames = Object.keys(this.client.user!.rawSkills);
-		const columnNames = skillNames.map(val => `"skills.${val}"`);
-		const query = `SELECT SUM(${columnNames.join(' + ')}) as count FROM users`;
-
-		return query;
-	}
-
 	async analyticsTick() {
-		const [numberOfMinions, totalSacrificed, numberOfIronmen, totalGP, totalXP] = (
+		const [numberOfMinions, totalSacrificed, numberOfIronmen, totalGP] = (
 			await Promise.all(
 				[
-					`SELECT COUNT(*) FROM users WHERE "minion.hasBought" = true;`,
-					`SELECT SUM ("sacrificedValue") AS count FROM users;`,
-					`SELECT COUNT(*) FROM users WHERE "minion.ironman" = true;`,
-					`SELECT SUM ("GP") AS count FROM users;`,
-					this.generateTotalXPQuery()
+					'SELECT COUNT(*) FROM users WHERE "minion.hasBought" = true;',
+					'SELECT SUM ("sacrificedValue") AS count FROM users;',
+					'SELECT COUNT(*) FROM users WHERE "minion.ironman" = true;',
+					'SELECT SUM ("GP") AS count FROM users;'
 				].map(query => this.client.query(query))
 			)
 		).map((result: any) => parseInt(result[0].count)) as number[];
@@ -97,8 +63,8 @@ export default class extends Task {
 		const taskCounts = await this.calculateMinionTaskCounts();
 
 		await AnalyticsTable.insert({
-			guildsCount: this.client.guilds.size,
-			membersCount: this.client.guilds.reduce((acc, curr) => (acc += curr.memberCount), 0),
+			guildsCount: this.client.guilds.cache.size,
+			membersCount: this.client.guilds.cache.reduce((acc, curr) => (acc += curr.memberCount), 0),
 			timestamp: Math.floor(Date.now() / 1000),
 			clueTasksCount: taskCounts.Clue,
 			minigameTasksCount: taskCounts.Minigame,
@@ -108,10 +74,16 @@ export default class extends Task {
 			minionsCount: numberOfMinions,
 			totalSacrificed,
 			totalGP,
-			totalXP,
 			dicingBank: this.client.settings.get(ClientSettings.EconomyStats.DicingBank),
 			duelTaxBank: this.client.settings.get(ClientSettings.EconomyStats.DuelTaxBank),
-			dailiesAmount: this.client.settings.get(ClientSettings.EconomyStats.DailiesAmount)
+			dailiesAmount: this.client.settings.get(ClientSettings.EconomyStats.DailiesAmount),
+			gpAlching: this.client.settings.get(ClientSettings.EconomyStats.GPSourceAlching),
+			gpPvm: this.client.settings.get(ClientSettings.EconomyStats.GPSourcePVMLoot),
+			gpSellingItems: this.client.settings.get(ClientSettings.EconomyStats.GPSourceSellingItems),
+			gpPickpocket: this.client.settings.get(ClientSettings.EconomyStats.GPSourcePickpocket),
+			gpOpen: this.client.settings.get(ClientSettings.EconomyStats.GPSourceOpen),
+			gpDice: this.client.settings.get(ClientSettings.EconomyStats.GPSourceDice),
+			gpDaily: this.client.settings.get(ClientSettings.EconomyStats.GPSourceDaily)
 		});
 	}
 }

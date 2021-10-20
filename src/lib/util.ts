@@ -1,35 +1,29 @@
+import { PaginatedMessage } from '@sapphire/discord.js-utilities';
+import { exec } from 'child_process';
 import crypto from 'crypto';
-import { Channel, Client, DMChannel, Guild, TextChannel } from 'discord.js';
-import { objectEntries, randInt, shuffleArr } from 'e';
-import { KlasaClient, KlasaUser, SettingsFolder, util } from 'klasa';
+import { Channel, Client, DMChannel, Guild, MessageButton, MessageOptions, TextChannel } from 'discord.js';
+import { objectEntries, randArrItem, randInt, round, shuffleArr, Time } from 'e';
+import { KlasaClient, KlasaMessage, KlasaUser, SettingsFolder, SettingsUpdateResults, util } from 'klasa';
 import { Bank } from 'oldschooljs';
 import { ItemBank } from 'oldschooljs/dist/meta/types';
 import Items from 'oldschooljs/dist/structures/Items';
 import { bool, integer, nodeCrypto, real } from 'random-js';
+import { promisify } from 'util';
+
+import { CENA_CHARS, continuationChars, Events, PerkTier, skillEmoji, SupportServer } from './constants';
+import { GearSetupType, GearSetupTypes } from './gear/types';
+import { ArrayItemsResolved, Skills } from './types';
+import { GroupMonsterActivityTaskOptions } from './types/minions';
+import getOSItem from './util/getOSItem';
+import getUsersPerkTier from './util/getUsersPerkTier';
+import itemID from './util/itemID';
+import resolveItems from './util/resolveItems';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const emojiRegex = require('emoji-regex');
 
-import {
-	CENA_CHARS,
-	continuationChars,
-	Events,
-	PerkTier,
-	skillEmoji,
-	SupportServer,
-	Time
-} from './constants';
-import { hasItemEquipped } from './gear';
-import { GearSetupTypes } from './gear/types';
-import killableMonsters from './minions/data/killableMonsters';
-import { KillableMonster } from './minions/types';
-import { ArrayItemsResolved, ItemTuple, Skills } from './types';
-import { GroupMonsterActivityTaskOptions } from './types/minions';
-import itemID from './util/itemID';
-import resolveItems from './util/resolveItems';
-
-export * from 'oldschooljs/dist/util/index';
 export { Util } from 'discord.js';
+export * from 'oldschooljs/dist/util/index';
 
 const zeroWidthSpace = '\u200b';
 
@@ -41,15 +35,15 @@ export function cleanMentions(guild: Guild | null, input: string, showAt = true)
 			switch (type) {
 				case '@':
 				case '@!': {
-					const tag = guild?.client.users.get(id);
+					const tag = guild?.client.users.cache.get(id);
 					return tag ? `${at}${tag.username}` : `<${type}${zeroWidthSpace}${id}>`;
 				}
 				case '@&': {
-					const role = guild?.roles.get(id);
+					const role = guild?.roles.cache.get(id);
 					return role ? `${at}${role.name}` : match;
 				}
 				case '#': {
-					const channel = guild?.channels.get(id);
+					const channel = guild?.channels.cache.get(id);
 					return channel ? `#${channel.name}` : `<${type}${zeroWidthSpace}${id}>`;
 				}
 				default:
@@ -59,11 +53,11 @@ export function cleanMentions(guild: Guild | null, input: string, showAt = true)
 }
 
 export function generateHexColorForCashStack(coins: number) {
-	if (coins > 9999999) {
+	if (coins > 9_999_999) {
 		return '#00FF80';
 	}
 
-	if (coins > 99999) {
+	if (coins > 99_999) {
 		return '#FFFFFF';
 	}
 
@@ -71,16 +65,12 @@ export function generateHexColorForCashStack(coins: number) {
 }
 
 export function formatItemStackQuantity(quantity: number) {
-	if (quantity > 9999999) {
-		return `${Math.floor(quantity / 1000000)}M`;
-	} else if (quantity > 99999) {
+	if (quantity > 9_999_999) {
+		return `${Math.floor(quantity / 1_000_000)}M`;
+	} else if (quantity > 99_999) {
 		return `${Math.floor(quantity / 1000)}K`;
 	}
 	return quantity.toString();
-}
-
-export function randomItemFromArray<T>(array: T[]): T {
-	return array[Math.floor(Math.random() * array.length)];
 }
 
 export function toTitleCase(str: string) {
@@ -95,82 +85,43 @@ export function cleanString(str: string) {
 	return str.replace(/[^0-9a-zA-Z+]/gi, '').toUpperCase();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function noOp(_any: any) {
-	return undefined;
-}
-
 export function stringMatches(str: string, str2: string) {
 	return cleanString(str) === cleanString(str2);
 }
 
-export function bankToString(bank: ItemBank, chunkSize?: number) {
-	const display = [];
-	for (const [itemID, qty] of Object.entries(bank)) {
-		const item = Items.get(parseInt(itemID));
-		if (!item) continue;
-		display.push(`**${item.name}:** ${qty.toLocaleString()}`);
-	}
-	return chunkSize ? util.chunk(display, chunkSize) : display;
-}
-
-export function formatDuration(ms: number) {
+export function formatDuration(ms: number, short = false) {
 	if (ms < 0) ms = -ms;
 	const time = {
-		day: Math.floor(ms / 86400000),
-		hour: Math.floor(ms / 3600000) % 24,
-		minute: Math.floor(ms / 60000) % 60,
+		day: Math.floor(ms / 86_400_000),
+		hour: Math.floor(ms / 3_600_000) % 24,
+		minute: Math.floor(ms / 60_000) % 60,
 		second: Math.floor(ms / 1000) % 60
 	};
-	let nums = Object.entries(time).filter(val => val[1] !== 0);
+	const shortTime = {
+		d: Math.floor(ms / 86_400_000),
+		h: Math.floor(ms / 3_600_000) % 24,
+		m: Math.floor(ms / 60_000) % 60,
+		s: Math.floor(ms / 1000) % 60
+	};
+	let nums = Object.entries(short ? shortTime : time).filter(val => val[1] !== 0);
 	if (nums.length === 0) return '1 second';
-	return nums.map(([key, val]) => `${val} ${key}${val === 1 ? '' : 's'}`).join(', ');
+	return nums
+		.map(([key, val]) => `${val}${short ? '' : ' '}${key}${val === 1 || short ? '' : 's'}`)
+		.join(short ? '' : ', ');
 }
 
 export function inlineCodeblock(input: string) {
 	return `\`${input.replace(/ /g, '\u00A0').replace(/`/g, '`\u200B')}\``;
 }
 
-export function saveCtx(ctx: any) {
-	const props = [
-		'fillStyle',
-		'globalAlpha',
-		'globalCompositeOperation',
-		'font',
-		'textAlign',
-		'textBaseline',
-		'direction',
-		'imageSmoothingEnabled'
-	];
-	const state: { [key: string]: any } = {};
-	for (const prop of props) {
-		state[prop] = ctx[prop];
-	}
-	return state;
-}
-
-export function restoreCtx(ctx: any, state: any) {
-	for (const prop of Object.keys(state)) {
-		ctx[prop] = state[prop];
-	}
-}
-
 export function isWeekend() {
-	const currentDate = new Date();
-	return currentDate.getDay() === 6 || currentDate.getDay() === 0;
-}
-
-export function sleep(ms: number) {
-	return new Promise(resolve => setTimeout(resolve, ms));
+	const currentDate = new Date(Date.now() - Time.Hour * 15);
+	return [6, 0].includes(currentDate.getDay());
 }
 
 export function saidYes(content: string) {
 	const newContent = content.toLowerCase();
 	return newContent === 'y' || newContent === 'yes';
-}
-
-export function removeDuplicatesFromArray<T>(arr: readonly T[]): T[] {
-	return [...new Set(arr)];
 }
 
 export function convertXPtoLVL(xp: number, cap = 99) {
@@ -212,10 +163,6 @@ export function roll(max: number) {
 	return rand(1, max) === 1;
 }
 
-export function notEmpty<TValue>(value: TValue | null | undefined): value is TValue {
-	return value !== null && value !== undefined;
-}
-
 export function itemNameFromID(itemID: number | string) {
 	return Items.get(itemID)?.name;
 }
@@ -224,64 +171,14 @@ export function floatPromise(ctx: { client: Client }, promise: Promise<unknown>)
 	if (util.isThenable(promise)) promise.catch(error => ctx.client.emit(Events.Wtf, error));
 }
 
-export function addArrayOfNumbers(arr: number[]) {
-	return arr.reduce((a, b) => a + b, 0);
-}
-
-/**
- * Shows what percentage a value is of a total value, for example calculating what percentage of 20 is 5? (25%)
- * @param partialValue The partial value of the total number, that you want to know what its percentage of the total is.
- * @param totalValue The total value, that the partial value is a part of.
- */
-export function calcWhatPercent(partialValue: number, totalValue: number): number {
-	return (100 * partialValue) / totalValue;
-}
-
-/**
- * Calculates what a X% of a total number is, for example calculating what is 20% of 100
- * @param percent The percentage (%) you want to calculate.
- * @param valueToCalc The total number that you want to get the percentage of.
- */
-export function calcPercentOfNum(percent: number, valueToCalc: number): number {
-	return (percent * valueToCalc) / 100;
-}
-
-/**
- * Reduces a number by a percentage of itself.
- * @param value, The number to be reduced.
- * @param percent The total number that you want to get the percentage of.
- */
-export function reduceNumByPercent(value: number, percent: number): number {
-	if (percent <= 0) return value;
-	if (percent >= 100) return 0;
-	return value - value * (percent / 100);
-}
-
 export async function arrIDToUsers(client: KlasaClient, ids: string[]) {
-	return Promise.all(ids.map(id => client.users.fetch(id)));
+	return Promise.all(ids.map(id => client.fetchUser(id)));
 }
 
 const rawEmojiRegex = emojiRegex();
 
 export function stripEmojis(str: string) {
 	return str.replace(rawEmojiRegex, '');
-}
-
-export function round(value = 1, precision = 1) {
-	const multiplier = Math.pow(10, precision || 0);
-	return Math.round(value * multiplier) / multiplier;
-}
-
-export function entries<T extends {}>(obj: T) {
-	return Object.entries(obj) as [keyof T, T[keyof T]][];
-}
-
-export function values<T extends {}>(obj: T) {
-	return Object.values(obj) as T[keyof T][];
-}
-
-export function keys<T extends {}>(obj: T) {
-	return Object.keys(obj) as (keyof T)[];
 }
 
 export const anglerBoosts = [
@@ -296,7 +193,7 @@ export function anglerBoostPercent(user: KlasaUser) {
 	let amountEquipped = 0;
 	let boostPercent = 0;
 	for (const [id, percent] of anglerBoosts) {
-		if (hasItemEquipped(id, skillingSetup)) {
+		if (skillingSetup.hasEquipped([id])) {
 			boostPercent += percent;
 			amountEquipped++;
 		}
@@ -307,19 +204,13 @@ export function anglerBoostPercent(user: KlasaUser) {
 	return round(boostPercent, 1);
 }
 
-const rogueOutfit = resolveItems([
-	'Rogue mask',
-	'Rogue top',
-	'Rogue trousers',
-	'Rogue gloves',
-	'Rogue boots'
-]);
+const rogueOutfit = resolveItems(['Rogue mask', 'Rogue top', 'Rogue trousers', 'Rogue gloves', 'Rogue boots']);
 
 export function rogueOutfitPercentBonus(user: KlasaUser): number {
 	const skillingSetup = user.getGear('skilling');
 	let amountEquipped = 0;
 	for (const id of rogueOutfit) {
-		if (hasItemEquipped(id, skillingSetup)) {
+		if (skillingSetup.hasEquipped([id])) {
 			amountEquipped++;
 		}
 	}
@@ -336,17 +227,15 @@ export function generateContinuationChar(user: KlasaUser) {
 			? 'y'
 			: Date.now() - user.createdTimestamp < Time.Month * 6
 			? shuffleArr(continuationChars).slice(0, randInt(1, 2)).join('')
-			: randomItemFromArray(continuationChars);
+			: randArrItem(continuationChars);
 
-	return `${shuffleArr(CENA_CHARS).slice(0, randInt(1, 2)).join('')}${baseChar}${shuffleArr(
-		CENA_CHARS
-	)
+	return `${shuffleArr(CENA_CHARS).slice(0, randInt(1, 2)).join('')}${baseChar}${shuffleArr(CENA_CHARS)
 		.slice(0, randInt(1, 2))
 		.join('')}`;
 }
 
-export function isValidGearSetup(str: string): str is GearSetupTypes {
-	return ['melee', 'mage', 'range', 'skilling', 'misc'].includes(str);
+export function isValidGearSetup(str: string): str is GearSetupType {
+	return GearSetupTypes.includes(str as any);
 }
 
 /**
@@ -370,16 +259,13 @@ export function sha256Hash(x: string) {
 }
 
 export function countSkillsAtleast99(user: KlasaUser) {
-	const skills = (user.settings.get('skills') as SettingsFolder).toJSON() as Record<
-		string,
-		number
-	>;
+	const skills = (user.settings.get('skills') as SettingsFolder).toJSON() as Record<string, number>;
 	return Object.values(skills).filter(xp => convertXPtoLVL(xp) >= 99).length;
 }
 
 export function getSupportGuild(client: Client) {
-	const guild = client.guilds.get(SupportServer);
-	if (!guild) throw `Can't find support guild.`;
+	const guild = client.guilds.cache.get(SupportServer);
+	if (!guild) throw "Can't find support guild.";
 	return guild;
 }
 
@@ -397,32 +283,39 @@ export function normal(mu = 0, sigma = 1, nsamples = 6) {
  * Checks if the bot can send a message to a channel object.
  * @param channel The channel to check if the bot can send a message to.
  */
-export function channelIsSendable(channel: Channel | undefined): channel is TextChannel {
-	if (
-		!channel ||
-		(!(channel instanceof DMChannel) && !(channel instanceof TextChannel)) ||
-		!channel.postable
-	) {
+export function channelIsSendable(channel: Channel | undefined | null): channel is TextChannel {
+	if (!channel || (!(channel instanceof DMChannel) && !(channel instanceof TextChannel)) || !channel.postable) {
 		return false;
 	}
 
 	return true;
 }
+export function calcCombatLevel(skills: Skills) {
+	const defence = skills.defence ? convertXPtoLVL(skills.defence) : 1;
+	const ranged = skills.ranged ? convertXPtoLVL(skills.ranged) : 1;
+	const hitpoints = skills.hitpoints ? convertXPtoLVL(skills.hitpoints) : 1;
+	const magic = skills.magic ? convertXPtoLVL(skills.magic) : 1;
+	const prayer = skills.prayer ? convertXPtoLVL(skills.prayer) : 1;
+	const attack = skills.attack ? convertXPtoLVL(skills.attack) : 1;
+	const strength = skills.strength ? convertXPtoLVL(skills.strength) : 1;
 
+	const base = 0.25 * (defence + hitpoints + Math.floor(prayer / 2));
+	const melee = 0.325 * (attack + strength);
+	const range = 0.325 * (Math.floor(ranged / 2) + ranged);
+	const mage = 0.325 * (Math.floor(magic / 2) + magic);
+	return Math.floor(base + Math.max(melee, range, mage));
+}
 export function skillsMeetRequirements(skills: Skills, requirements: Skills) {
 	for (const [skillName, level] of objectEntries(requirements)) {
-		const xpHas = skills[skillName];
-		const levelHas = convertXPtoLVL(xpHas ?? 1);
-		if (levelHas < level!) return false;
+		if ((skillName as string) === 'combat') {
+			if (calcCombatLevel(skills) < level!) return false;
+		} else {
+			const xpHas = skills[skillName];
+			const levelHas = convertXPtoLVL(xpHas ?? 1);
+			if (levelHas < level!) return false;
+		}
 	}
 	return true;
-}
-
-export default function findMonster(str: string): KillableMonster | undefined {
-	const mon = killableMonsters.find(
-		mon => stringMatches(mon.name, str) || mon.aliases.some(alias => stringMatches(alias, str))
-	);
-	return mon;
 }
 
 export function formatItemReqs(items: ArrayItemsResolved) {
@@ -437,12 +330,12 @@ export function formatItemReqs(items: ArrayItemsResolved) {
 	return str.join(', ');
 }
 
-export function formatSkillRequirements(reqs: Record<string, number>) {
+export function formatSkillRequirements(reqs: Record<string, number>, emojis = true) {
 	let arr = [];
 	for (const [name, num] of objectEntries(reqs)) {
 		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore
-		arr.push(` ${skillEmoji[name]} **${num}** ${toTitleCase(name)}`);
+		arr.push(`${emojis ? ` ${skillEmoji[name]} ` : ''}**${num}** ${toTitleCase(name)}`);
 	}
 	return arr.join(', ');
 }
@@ -467,18 +360,6 @@ export function formatItemBoosts(items: ItemBank[]) {
 	return str.join(', ');
 }
 
-export function filterItemTupleByQuery(query: string, items: ItemTuple[]) {
-	const filtered: ItemTuple[] = [];
-
-	for (const item of items) {
-		if (cleanString(Items.get(item[0])!.name).includes(cleanString(query))) {
-			filtered.push(item);
-		}
-	}
-
-	return filtered;
-}
-
 /**
  * Given a list of items, and a bank, it will return a new bank with all items not
  * in the filter removed from the bank.
@@ -500,12 +381,136 @@ export function filterBankFromArrayOfItems(itemFilter: number[], bank: ItemBank)
 	return returnBank;
 }
 
-export function updateBankSetting(
-	client: KlasaClient,
-	setting: string,
-	bankToAdd: Bank | ItemBank
-) {
+export function updateBankSetting(client: KlasaClient, setting: string, bankToAdd: Bank | ItemBank) {
 	const current = new Bank(client.settings.get(setting) as ItemBank);
 	const newBank = current.add(bankToAdd);
 	return client.settings.update(setting, newBank.bank);
+}
+
+export function updateGPTrackSetting(client: KlasaClient, setting: string, amount: number) {
+	const current = client.settings.get(setting) as number;
+	const newValue = current + amount;
+	return client.settings.update(setting, newValue);
+}
+
+export function textEffect(str: string, effect: 'none' | 'strikethrough') {
+	let wrap = '';
+
+	if (effect === 'strikethrough') {
+		wrap = '~~';
+	}
+	return `${wrap}${str.replace(/~/g, '')}${wrap}`;
+}
+
+export async function wipeDBArrayByKey(user: KlasaUser, key: string): Promise<SettingsUpdateResults> {
+	const active: any[] = user.settings.get(key) as any[];
+	return user.settings.update(key, active);
+}
+
+export function isValidNickname(str?: string) {
+	return (
+		str &&
+		typeof str === 'string' &&
+		str.length >= 2 &&
+		str.length <= 30 &&
+		['\n', '`', '@', '<', ':'].every(char => !str.includes(char)) &&
+		stripEmojis(str).length === str.length
+	);
+}
+
+export function patronMaxTripCalc(user: KlasaUser) {
+	const perkTier = getUsersPerkTier(user);
+	if (perkTier === PerkTier.Two) return Time.Minute * 3;
+	else if (perkTier === PerkTier.Three) return Time.Minute * 6;
+	else if (perkTier >= PerkTier.Four) return Time.Minute * 10;
+	return 0;
+}
+
+export async function makePaginatedMessage(message: KlasaMessage, pages: MessageOptions[]) {
+	const display = new PaginatedMessage();
+	// @ts-ignore 2445
+	display.setUpReactions = () => null;
+	for (const page of pages) {
+		display.addPage({
+			...page,
+			components:
+				pages.length > 1
+					? [
+							PaginatedMessage.defaultActions
+								.slice(1, -1)
+								.map(a =>
+									new MessageButton()
+										.setLabel('')
+										.setStyle('SECONDARY')
+										.setCustomID(a.id)
+										.setEmoji(a.id)
+								)
+					  ]
+					: []
+		});
+	}
+
+	await display.run(message);
+
+	if (pages.length > 1) {
+		const collector = display.response!.createMessageComponentInteractionCollector({
+			time: Time.Minute,
+			filter: i => i.user.id === message.author.id
+		});
+
+		collector.on('collect', async interaction => {
+			for (const action of PaginatedMessage.defaultActions) {
+				if (interaction.customID === action.id) {
+					const previousIndex = display.index;
+
+					await action.run({
+						handler: display,
+						author: message.author,
+						channel: message.channel,
+						response: display.response!,
+						collector: display.collector!
+					});
+
+					if (previousIndex !== display.index) {
+						await interaction.update(await display.resolvePage(message.channel, display.index));
+						return;
+					}
+				}
+			}
+		});
+
+		collector.on('end', () => {
+			display.response!.edit({ components: [] });
+		});
+	}
+}
+
+export const asyncExec = promisify(exec);
+
+export function countUsersWithItemInCl(client: KlasaClient, _item: string) {
+	const item = getOSItem(_item);
+	const query = `SELECT COUNT(id) FROM users WHERE "collectionLogBank"->>'${item.id}' IS NOT NULL AND "collectionLogBank"->>'${item.id}'::int >= 1;`;
+	return client.query(query);
+}
+
+export function getUsername(client: KlasaClient, id: string): string {
+	return (client.commands.get('leaderboard') as any)!.getUsername(id);
+}
+
+export async function runCommand(
+	message: KlasaMessage,
+	commandName: 'k' | 'mclue' | 'autoslay' | 'slayertask',
+	args: unknown[]
+) {
+	const command = message.client.commands.get(commandName);
+	if (!command) {
+		throw new Error(`Tried to run \`${commandName}\` command, but couldn't find the piece.`);
+	}
+	try {
+		const result = await command.run(message, args);
+		return result;
+	} catch (err) {
+		message.client.emit('commandError', message, command, args, err);
+	}
+	return null;
 }

@@ -68,6 +68,34 @@ export const collectables: Collectable[] = [
 		duration: Time.Minute * 6.5 * 0.5,
 		qpRequired: 72,
 	},
+	{
+		item: getOSItem("Bucket of sand"),
+		quantity: 30,
+		itemCost: new Bank({
+			"Law rune": 1,
+			Coins: 30 * 25,
+		}),
+		duration: Time.Minute * 0.5,
+		qpRequired: 30,
+	},
+	// Miniquest to get Tarn's diary for Salve amulet (e)/(ei)
+	{
+		item: getOSItem("Tarn's diary"),
+		quantity: 1,
+		itemCost: new Bank({
+			"Prayer potion(4)": 2,
+		}),
+		skillReqs: {
+			slayer: 40,
+			attack: 60,
+			strength: 60,
+			ranged: 60,
+			defence: 60,
+			magic: 60,
+		},
+		duration: 10 * Time.Minute * 0.5,
+		qpRequired: 100,
+	},
 ];
 
 export default class extends BotCommand {
@@ -113,7 +141,7 @@ export default class extends BotCommand {
 
 		let duration = collectable.duration * quantity * xpBoost;
 		if (duration > maxTripLength) {
-			return msg.send(
+			return msg.channel.send(
 				`${
 					msg.author.minionName
 				} can't go on a trip longer than ${formatDuration(
@@ -142,7 +170,7 @@ export default class extends BotCommand {
 			])
 		);
 
-		await addSubTaskToActivityTask<CollectingOptions>(this.client, {
+		await addSubTaskToActivityTask<CollectingOptions>({
 			collectableID: collectable.item.id,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
@@ -151,7 +179,7 @@ export default class extends BotCommand {
 			type: Activity.Collecting,
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${msg.author.minionName} is now collecting ${
 				quantity * collectable.quantity
 			}x ${collectable.item.name}, it'll take around ${formatDuration(

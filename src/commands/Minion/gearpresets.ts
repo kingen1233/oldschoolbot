@@ -1,16 +1,15 @@
-import { MessageAttachment } from 'discord.js';
+import { MessageAttachment, MessageEmbed } from 'discord.js';
+import { objectValues } from 'e';
 import { CommandStore, KlasaMessage, KlasaUser } from 'klasa';
 import { Bank } from 'oldschooljs';
-import { cleanString } from 'oldschooljs/dist/util';
 
-import { defaultGear, resolveGearTypeSetting } from '../../lib/gear';
-import { gearPresetToStr, globalPresets } from '../../lib/gear/functions/gearPresets';
+import { Color } from '../../lib/constants';
+import { defaultGear, globalPresets, resolveGearTypeSetting } from '../../lib/gear';
 import { generateGearImage } from '../../lib/gear/functions/generateGearImage';
-import { GearSetupTypes } from '../../lib/gear/types';
 import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { GearPresetsTable } from '../../lib/typeorm/GearPresetsTable.entity';
-import { isValidGearSetup } from '../../lib/util';
+import { cleanString, isValidGearSetup } from '../../lib/util';
 
 function maxPresets(user: KlasaUser) {
 	return user.perkTier * 2 + 3;
@@ -22,14 +21,11 @@ export default class extends BotCommand {
 			altProtection: true,
 			cooldown: 1,
 			description: 'Allows you to manage your gear presets.',
+			aliases: ['gps'],
 			usageDelim: ' ',
-			usage: '[new|delete|equip] [name:str{1,12}] [setup:str]',
+			usage: '[new|update|delete|equip|share|rename] [name:str{1,12}] [user:user|setup:str]',
 			subcommands: true,
-			examples: [
-				'+gearpresets new pvm melee',
-				'+gearpresets delete pvm',
-				'+gearpresets equip pvm melee'
-			],
+			examples: ['+gearpresets new pvm melee', '+gearpresets delete pvm', '+gearpresets equip pvm melee'],
 			categoryFlags: ['minion', 'skilling']
 		});
 	}
@@ -37,33 +33,42 @@ export default class extends BotCommand {
 	async run(msg: KlasaMessage) {
 		const presets = await GearPresetsTable.find({ userID: msg.author.id });
 		if (presets.length === 0) {
-			return msg.send(`You have no presets.`);
+			return msg.channel.send('You have no presets.');
 		}
-		let str = '**Your presets:**\n';
+		let title = '**Your presets:**';
+		let str = '';
 		for (const pre of presets) {
-			str += `**${pre.name}:** ${gearPresetToStr(pre)}\n`;
+			str += `**${pre.name}:** ${pre}\n`;
 		}
-		return msg.send(str);
+		if (str.length > 2000) {
+			const attachment = new MessageAttachment(
+				Buffer.from(`${title}\n${str}`),
+				`${msg.author.username}s-GearPresets.txt`
+			);
+			return msg.channel.send({ content: 'Here are your gear presets...', files: [attachment] });
+		}
+		const embed = new MessageEmbed().setColor(Color.Orange).setTitle(title).setDescription(str);
+		return msg.channel.send({ embeds: [embed] });
 	}
 
 	async equip(msg: KlasaMessage, [name, setup]: [string, string]) {
 		if (msg.author.minionIsBusy) {
-			return msg.send(
+			return msg.channel.send(
 				`${msg.author.minionName} is currently out on a trip, so you can't change their gear!`
 			);
 		}
 
-		if (!name) return msg.send(`You didn't supply a name.`);
-		if (!setup) return msg.send(`You didn't supply a setup.`);
+		if (!name) return msg.channel.send("You didn't supply a name.");
+		if (!setup) return msg.channel.send("You didn't supply a setup.");
 
 		if (!isValidGearSetup(setup)) {
-			return msg.send(`That's not a valid gear setup.`);
+			return msg.channel.send("That's not a valid gear setup.");
 		}
 
 		const userPreset = await GearPresetsTable.findOne({ userID: msg.author.id, name });
 		const globalPreset = globalPresets.find(i => i.name === name);
 		if (!userPreset && !globalPreset) {
-			return msg.send(`You don't have a gear preset with that name.`);
+			return msg.channel.send("You don't have a gear preset with that name.");
 		}
 		const preset = (userPreset ?? globalPreset) as GearPresetsTable;
 
@@ -95,16 +100,28 @@ export default class extends BotCommand {
 			toRemove.add(preset.Ammo, preset.AmmoQuantity!);
 		}
 
-		if (!msg.author.bank().has(toRemove.bank)) {
-			return msg.send(
-				`You don't have the items in this preset. You're missing: ${toRemove.remove(
-					msg.author.bank()
-				)}.`
+		const userBankWithEquippedItems = msg.author.bank().clone();
+		for (const e of objectValues(msg.author.getGear(setup).raw())) {
+			if (e) userBankWithEquippedItems.add(e.item, e.quantity);
+		}
+
+		if (!userBankWithEquippedItems.has(toRemove.bank)) {
+			return msg.channel.send(
+				`You don't have the items in this preset. You're missing: ${toRemove.remove(msg.author.bank())}.`
 			);
 		}
 
 		try {
-			await this.client.commands.get('unequipall')!.run(msg, [setup]);
+			const unequipAllMessage = await this.client.commands.get('unequipall')!.run(msg, [setup]);
+			if (
+				!(unequipAllMessage instanceof KlasaMessage) ||
+				(!(unequipAllMessage as KlasaMessage).content.toLowerCase().includes('you unequipped all items') &&
+					!(unequipAllMessage as KlasaMessage).content.toLowerCase().includes('you have no items in your'))
+			) {
+				return msg.channel.send(
+					`It was not possible to equip your **${preset.name}** on your ${setup} gear setup.`
+				);
+			}
 		} catch (_) {}
 
 		await msg.author.removeItemsFromBank(toRemove.bank);
@@ -118,46 +135,53 @@ export default class extends BotCommand {
 			msg.author.settings.get(UserSettings.Minion.EquippedPet)
 		);
 
-		return msg.send(
-			`You equipped the ${preset.name} preset in your ${setup} setup.`,
-			new MessageAttachment(image)
-		);
+		return msg.channel.send({
+			content: `You equipped the ${preset.name} preset in your ${setup} setup.`,
+			files: [new MessageAttachment(image)]
+		});
 	}
 
 	async delete(msg: KlasaMessage, [name]: [string]) {
-		if (!name) return msg.send(`You didn't supply a name.`);
+		if (!name) return msg.channel.send("You didn't supply a name.");
 
 		const preset = await GearPresetsTable.findOne({ userID: msg.author.id, name });
 		if (!preset) {
-			return msg.send(`You don't have a gear preset with that name.`);
+			return msg.channel.send("You don't have a gear preset with that name.");
 		}
 
 		await preset.remove();
 
-		return msg.send(`Successfully deleted your preset called \`${name}\`.`);
+		return msg.channel.send(`Successfully deleted your preset called \`${name}\`.`);
 	}
 
-	async new(msg: KlasaMessage, [name = '', setup = '']: [string, string]) {
+	async update(msg: KlasaMessage, [name = '', setup = '']: [string, string]) {
+		return this.new(msg, [name, setup, true]);
+	}
+
+	async new(msg: KlasaMessage, [name = '', setup = '', update = false]: [string, string, boolean]) {
 		setup = setup.toLowerCase();
 		name = cleanString(name).toLowerCase();
-		if (!name) return msg.send(`You didn't supply a name.`);
-		if (!setup) return msg.send(`You didn't supply a setup.`);
+		if (!name) return msg.channel.send("You didn't supply a name.");
+		if (!setup) return msg.channel.send("You didn't supply a setup.");
 
 		if (!isValidGearSetup(setup)) {
-			return msg.send(`That's not a valid gear setup.`);
+			return msg.channel.send("That's not a valid gear setup.");
 		}
 
 		const currentPresets = await GearPresetsTable.find({ userID: msg.author.id });
-		if (currentPresets.some(pre => pre.name === name)) {
-			return msg.send(`You already have a gear presets called \`${name}\`.`);
+		if (currentPresets.some(pre => pre.name === name) && !update) {
+			return msg.channel.send(`You already have a gear presets called \`${name}\`.`);
+		}
+		if (!currentPresets.some(pre => pre.name === name) && update) {
+			return msg.channel.send('You cant update a gearpreset you dont have.');
 		}
 
 		const max = maxPresets(msg.author);
-		if (currentPresets.length >= max) {
-			return msg.send(`The maximum amount of gear presets you can have is ${max}.`);
+		if (currentPresets.length >= max && !update) {
+			return msg.channel.send(`The maximum amount of gear presets you can have is ${max}.`);
 		}
 
-		let gearSetup = msg.author.rawGear()[setup as GearSetupTypes];
+		let gearSetup = msg.author.rawGear()[setup];
 		const preset = new GearPresetsTable();
 
 		preset.Head = gearSetup.head?.item ?? null;
@@ -177,8 +201,78 @@ export default class extends BotCommand {
 		preset.name = name;
 		preset.userID = msg.author.id;
 		await preset.save();
-		return msg.send(
-			`Successfully made a new preset called \`${preset.name}\` based off your ${setup} setup.`
+		return msg.channel.send(
+			`Successfully ${update ? 'updated the' : 'made a new'} preset called \`${
+				preset.name
+			}\` based off your ${setup} setup.`
 		);
+	}
+
+	async share(msg: KlasaMessage, [name = '', user]: [string, KlasaUser]) {
+		const preset = await GearPresetsTable.findOne({ userID: msg.author.id, name });
+		if (!name) return msg.channel.send('You must specify the name of the preset you want to share.');
+		if (!preset) return msg.channel.send(`You do not have any preset called ${name}.`);
+		if (user === msg.author) return msg.channel.send("You can't share a preset with yourself.");
+
+		// Check if user can receive the preset
+		const userPresets = await GearPresetsTable.find({ userID: user.id });
+		if (userPresets.some(pre => pre.name === name)) {
+			return msg.channel.send(`${user.username} already have a gear presets called \`${name}\`.`);
+		}
+		const max = maxPresets(user);
+		if (userPresets.length >= max) {
+			return msg.channel.send(`The maximum amount of gear presets ${user.username} can have is ${max}.`);
+		}
+
+		// Ask for the user confirmation
+		const originalUser = msg.author;
+		msg.author = user;
+		await msg.confirm(
+			`${user.username}, do you want to receive ${originalUser.username}'s ${preset.name} preset (Only the preset will be shared, not the items)?`
+		);
+		const newPreset = new GearPresetsTable();
+		newPreset.Head = preset.Head;
+		newPreset.Neck = preset.Neck;
+		newPreset.Body = preset.Body;
+		newPreset.Legs = preset.Legs;
+		newPreset.Cape = preset.Cape;
+		newPreset.TwoHanded = preset.TwoHanded;
+		newPreset.Hands = preset.Hands;
+		newPreset.Feet = preset.Feet;
+		newPreset.Shield = preset.Shield;
+		newPreset.Weapon = preset.Weapon;
+		newPreset.Ring = preset.Ring;
+		newPreset.Ammo = preset.Ammo;
+		newPreset.AmmoQuantity = preset.AmmoQuantity;
+		newPreset.name = preset.name;
+		newPreset.userID = user.id;
+		await newPreset.save();
+		return msg.channel.send(`${user.username}, you can now use the preset ${newPreset.name}.`);
+	}
+
+	async rename(msg: KlasaMessage, [name = '', newName = '']: [string, string]) {
+		if (!name || !newName)
+			return msg.channel.send(
+				`You must specify the preset you want to rename and the new name. Example: \`${
+					msg.cmdPrefix
+				}gearpresets rename ${name || 'currentname'} newname\``
+			);
+		const realNewName = newName.substr(0, 12);
+		const preset = await GearPresetsTable.findOne({ userID: msg.author.id, name });
+		if (!preset) {
+			return msg.channel.send("You don't have a gear preset with that name.");
+		}
+		const presetNewName = await GearPresetsTable.findOne({ userID: msg.author.id, name: realNewName });
+		if (presetNewName) {
+			return msg.channel.send(`You already have a preset called ${realNewName}.`);
+		}
+		await GearPresetsTable.update(
+			{
+				userID: msg.author.id,
+				name
+			},
+			{ name: realNewName }
+		);
+		return msg.channel.send(`Successfully renamed your preset from \`${name}\` to \`${realNewName}\`.`);
 	}
 }

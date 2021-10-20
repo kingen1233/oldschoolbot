@@ -1,6 +1,6 @@
 import { Task } from 'klasa';
 import { Bank } from 'oldschooljs';
-import { GrandHallowedCoffin } from 'oldschooljs/dist/simulation/misc/grandHallowedCoffin';
+import { GrandHallowedCoffin } from 'oldschooljs/dist/simulation/misc/GrandHallowedCoffin';
 
 import { openCoffin, sepulchreFloors } from '../../../lib/minions/data/sepulchre';
 import { SkillsEnum } from '../../../lib/skilling/types';
@@ -11,7 +11,7 @@ import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: SepulchreActivityTaskOptions) {
 		const { channelID, quantity, floors, userID } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		user.incrementMinigameScore('Sepulchre', quantity);
 
 		const completedFloors = sepulchreFloors.filter(fl => floors.includes(fl.number));
@@ -38,29 +38,22 @@ export default class extends Task {
 			}
 		}
 
-		await user.addItemsToBank(loot.bank, true);
-		const currentLevel = user.skillLevel(SkillsEnum.Agility);
-		await user.addXP(SkillsEnum.Agility, agilityXP);
-		const nextLevel = user.skillLevel(SkillsEnum.Agility);
+		const { previousCL, itemsAdded } = await user.addItemsToBank(loot.bank, true);
+		const xpStr = await user.addXP({ skillName: SkillsEnum.Agility, amount: agilityXP });
 
-		let str = `${user}, ${
-			user.minionName
-		} finished doing the Hallowed Sepulchre ${quantity}x times (floor ${floors[0]}-${
-			floors[floors.length - 1]
-		}), you received ${agilityXP.toLocaleString()} Agility XP. ${numCoffinsOpened}x coffins opened.`;
-
-		if (nextLevel > currentLevel) {
-			str += `\n\n${user.minionName}'s Agility level is now ${nextLevel}!`;
-		}
+		let str = `${user}, ${user.minionName} finished doing the Hallowed Sepulchre ${quantity}x times (floor ${
+			floors[0]
+		}-${floors[floors.length - 1]}), and opened ${numCoffinsOpened}x coffins.\n\n${xpStr}`;
 
 		const { image } = await this.client.tasks
 			.get('bankImage')!
 			.generateBankImage(
-				loot.bank,
+				itemsAdded,
 				`Loot From ${quantity}x Hallowed Sepulchre:`,
 				true,
 				{ showNewCL: 1 },
-				user
+				user,
+				previousCL
 			);
 
 		handleTripFinish(
@@ -74,7 +67,7 @@ export default class extends Task {
 			},
 			image!,
 			data,
-			loot.bank
+			itemsAdded
 		);
 	}
 }

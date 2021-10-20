@@ -1,5 +1,5 @@
 import { SkillsEnum } from 'oldschooljs/dist/constants';
-import { BaseEntity, Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { BaseEntity, Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ name: 'xp_gains' })
 export class XPGainsTable extends BaseEntity {
@@ -13,12 +13,20 @@ export class XPGainsTable extends BaseEntity {
 	})
 	public userID!: string;
 
+	@Index()
 	@CreateDateColumn({ nullable: false, type: 'timestamp without time zone' })
 	public date!: Date;
 
+	@Index()
 	@Column({ type: 'enum', enum: SkillsEnum, name: 'skill', nullable: false })
 	public skill!: SkillsEnum;
 
 	@Column({ type: 'integer', name: 'xp', nullable: false })
 	public xp!: number;
+
+	@Column({ type: 'boolean', name: 'artificial', nullable: true })
+	public artificial!: boolean | null;
+
+	@Column({ type: 'boolean', name: 'post_max', nullable: false, default: false })
+	public postMax!: boolean | null;
 }

@@ -9,12 +9,16 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: SmithingActivityTaskOptions) {
 		const { smithedBarID, quantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 
 		const smithedItem = Smithing.SmithableItems.find(item => item.id === smithedBarID)!;
 
 		const xpReceived = quantity * smithedItem.xp;
-		const xpRes = await user.addXP(SkillsEnum.Smithing, xpReceived, duration);
+		const xpRes = await user.addXP({
+			skillName: SkillsEnum.Smithing,
+			amount: xpReceived,
+			duration
+		});
 
 		const loot = new Bank({
 			[smithedItem.id]: quantity * smithedItem.outputMultiple

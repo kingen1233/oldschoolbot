@@ -1,8 +1,11 @@
+import { captureException } from '@sentry/node';
 import {
 	MessageAttachment,
 	MessageEmbed,
+	MessageOptions,
 	Permissions,
 	TextChannel,
+	Util,
 	WebhookClient
 } from 'discord.js';
 import { KlasaClient } from 'klasa';
@@ -17,19 +20,19 @@ export async function resolveChannel(
 	client: KlasaClient,
 	channelID: string
 ): Promise<WebhookClient | TextChannel | undefined> {
-	const channel = client.channels.get(channelID);
-	if (!channelIsSendable(channel)) return undefined;
-
+	const channel = client.channels.cache.get(channelID);
+	if (!channel) return undefined;
 	if (channel.type === 'dm') {
-		return channel;
+		return channel as TextChannel;
 	}
+	if (!channelIsSendable(channel)) return undefined;
 
 	const cached = webhookCache.get(channelID);
 	if (cached) return cached;
 
 	const db = await WebhookTable.findOne({ channelID });
 	if (db) {
-		client.emit('log', `Restoring webhook from DB.`);
+		client.emit('log', 'Restoring webhook from DB.');
 		webhookCache.set(db.channelID, new WebhookClient(db.webhookID, db.webhookToken));
 		return webhookCache.get(db.channelID);
 	}
@@ -39,7 +42,7 @@ export async function resolveChannel(
 	}
 
 	try {
-		client.emit('log', `Trying to create webhook.`);
+		client.emit('log', 'Trying to create webhook.');
 		const createdWebhook = await channel.createWebhook(client.user!.username, {
 			avatar: client.user!.displayAvatarURL({})
 		});
@@ -55,6 +58,11 @@ export async function resolveChannel(
 		client.emit('log', 'Failed to create webhook');
 		return channel;
 	}
+}
+
+async function deleteWebhook(channelID: string) {
+	webhookCache.delete(channelID);
+	await WebhookTable.delete({ channelID });
 }
 
 const queue = new PQueue({ concurrency: 10 });
@@ -74,13 +82,61 @@ export async function sendToChannelID(
 
 		client.emit('log', `Sending to channelID[${channelID}].`);
 		let files = data.image ? [data.image] : undefined;
+		let embeds = [];
+		if (data.embed) embeds.push(data.embed);
 		if (channel instanceof WebhookClient) {
-			return channel.send(data.content, {
+			try {
+				await webhookSend(channel, {
+					content: data.content,
+					files,
+					embeds
+				});
+			} catch (err: any) {
+				const error = err as Error;
+				if (error.message === 'Unknown Webhook') {
+					await deleteWebhook(channelID);
+					await sendToChannelID(client, channelID, data);
+				} else {
+					captureException(error, {
+						tags: {
+							content: data.content,
+							channelID
+						}
+					});
+				}
+			}
+		} else {
+			await channel.send({
+				content: data.content,
 				files,
-				embeds: data.embed ? [data.embed] : undefined,
-				split: true
+				embeds
 			});
 		}
-		return channel.send(data.content, { files, embed: data.embed, split: true });
 	});
+}
+
+async function webhookSend(channel: WebhookClient, input: MessageOptions) {
+	const maxLength = 2000;
+
+	if (input.content && input.content.length > maxLength) {
+		// Moves files + components to the final message.
+		const split = Util.splitMessage(input.content, { maxLength });
+		const newPayload = { ...input };
+		// Separate files and components from payload for interactions
+		const { files, embeds } = newPayload;
+		delete newPayload.files;
+		delete newPayload.embeds;
+		await webhookSend(channel, { ...newPayload, content: split[0] });
+
+		for (let i = 1; i < split.length; i++) {
+			if (i + 1 === split.length) {
+				// Add files to last msg, and components for interactions to the final message.
+				await webhookSend(channel, { files, embeds, content: split[i] });
+			} else {
+				await webhookSend(channel, { content: split[i] });
+			}
+		}
+		return;
+	}
+	await channel.send({ content: input.content, embeds: input.embeds, files: input.files });
 }

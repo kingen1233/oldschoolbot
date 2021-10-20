@@ -1,13 +1,13 @@
-import { CommandStore, KlasaMessage } from 'klasa';
+import { CommandStore, KlasaMessage } from "klasa";
 
-import { Activity, MAX_QP, Time, xpBoost } from '../../lib/constants';
-//import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { QuestingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, MAX_QP, Time, xpBoost } from "../../lib/constants";
+// import { hasGracefulEquipped } from '../../lib/gear/functions/hasGracefulEquipped';
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { UserSettings } from "../../lib/settings/types/UserSettings";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { QuestingActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -15,10 +15,10 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			aliases: ['q'],
-			categoryFlags: ['minion'],
-			description: 'Sends your minion to complete quests.',
-			examples: ['+q']
+			aliases: ["q"],
+			categoryFlags: ["minion"],
+			description: "Sends your minion to complete quests.",
+			examples: ["+q"],
 		});
 	}
 
@@ -27,7 +27,9 @@ export default class extends BotCommand {
 	async run(msg: KlasaMessage) {
 		const currentQP = msg.author.settings.get(UserSettings.QP);
 		if (currentQP >= MAX_QP) {
-			return msg.send(`You already have the maximum amount of Quest Points.`);
+			return msg.channel.send(
+				"You already have the maximum amount of Quest Points."
+			);
 		}
 
 		const boosts = [];
@@ -36,23 +38,25 @@ export default class extends BotCommand {
 
 		if (msg.author.hasGracefulEquipped()) {
 			duration *= 0.9;
-			boosts.push(`10% for Graceful`);
+			boosts.push("10% for Graceful");
 		}
 
-		await addSubTaskToActivityTask<QuestingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<QuestingActivityTaskOptions>({
 			type: Activity.Questing,
 			duration,
 			userID: msg.author.id,
-			channelID: msg.channel.id
+			channelID: msg.channel.id,
 		});
 		let response = `${
 			msg.author.minionName
-		} is now completing quests, they'll come back in around ${formatDuration(duration)}.`;
+		} is now completing quests, they'll come back in around ${formatDuration(
+			duration
+		)}.`;
 
 		if (boosts.length > 0) {
-			response += `\n\n **Boosts:** ${boosts.join(', ')}.`;
+			response += `\n\n**Boosts:** ${boosts.join(", ")}.`;
 		}
 
-		return msg.send(response);
+		return msg.channel.send(response);
 	}
 }

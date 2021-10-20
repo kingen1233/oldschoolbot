@@ -1,4 +1,4 @@
-import { Task } from 'klasa';
+import { KlasaMessage, Task } from 'klasa';
 import { Bank } from 'oldschooljs';
 import SimpleTable from 'oldschooljs/dist/structures/SimpleTable';
 
@@ -17,7 +17,7 @@ export default class extends Task {
 
 		const minionName = await getMinionName(userID);
 
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		const loot = new Bank();
 		for (let i = 0; i < quantity; i++) {
 			loot.add('Castle wars ticket', ticketTable.roll().item);
@@ -30,8 +30,10 @@ export default class extends Task {
 			channelID,
 			`<@${userID}>, ${minionName} finished ${quantity}x Castle Wars games and received ${loot}.`,
 			res => {
-				user.log(`continued castle wars`);
-				return (this.client.commands.get('castlewars') as CastleWarsCommand)!.play(res);
+				user.log('continued castle wars');
+				return (this.client.commands.get('castlewars') as unknown as CastleWarsCommand)!.play(
+					res
+				) as Promise<KlasaMessage>;
 			},
 			undefined,
 			data,

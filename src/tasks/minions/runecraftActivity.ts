@@ -3,15 +3,16 @@ import { Bank } from 'oldschooljs';
 
 import { Emoji, Events } from '../../lib/constants';
 import { calcMaxRCQuantity } from '../../lib/skilling/functions/calcMaxRCQuantity';
-import Runecraft, { RunecraftActivityTaskOptions } from '../../lib/skilling/skills/runecraft';
+import Runecraft from '../../lib/skilling/skills/runecraft';
 import { SkillsEnum } from '../../lib/skilling/types';
+import { RunecraftActivityTaskOptions } from '../../lib/types/minions';
 import { roll } from '../../lib/util';
 import { handleTripFinish } from '../../lib/util/handleTripFinish';
 
 export default class extends Task {
 	async run(data: RunecraftActivityTaskOptions) {
-		const { runeID, essenceQuantity, userID, channelID, duration } = data;
-		const user = await this.client.users.fetch(userID);
+		const { runeID, essenceQuantity, userID, channelID, imbueCasts, duration } = data;
+		const user = await this.client.fetchUser(userID);
 
 		const rune = Runecraft.Runes.find(_rune => _rune.id === runeID)!;
 
@@ -20,7 +21,16 @@ export default class extends Task {
 
 		const xpReceived = essenceQuantity * rune.xp;
 
-		const xpRes = await user.addXP(SkillsEnum.Runecraft, xpReceived, duration);
+		const magicXpReceived = imbueCasts * 86;
+
+		let xpRes = `\n${await user.addXP({
+			skillName: SkillsEnum.Runecraft,
+			amount: xpReceived,
+			duration
+		})}`;
+		if (magicXpReceived > 0) {
+			xpRes += `\n${await user.addXP({ skillName: SkillsEnum.Magic, amount: magicXpReceived, duration })}`;
+		}
 
 		let str = `${user}, ${user.minionName} finished crafting ${runeQuantity} ${rune.name}. ${xpRes}`;
 
@@ -30,14 +40,14 @@ export default class extends Task {
 
 		if (roll((1_795_758 - user.skillLevel(SkillsEnum.Runecraft) * 25) / essenceQuantity)) {
 			loot.add('Rift guardian');
-			str += `\nYou have a funny feeling you're being followed...`;
+			str += "\nYou have a funny feeling you're being followed...";
 			this.client.emit(
 				Events.ServerNotification,
 				`${Emoji.Runecraft} **${user.username}'s** minion, ${
 					user.minionName
-				}, just received a Rift guardian while crafting ${
-					rune.name
-				}s at level ${user.skillLevel(SkillsEnum.Runecraft)} Runecrafting!`
+				}, just received a Rift guardian while crafting ${rune.name}s at level ${user.skillLevel(
+					SkillsEnum.Runecraft
+				)} Runecrafting!`
 			);
 		}
 

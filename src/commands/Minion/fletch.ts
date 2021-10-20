@@ -1,14 +1,18 @@
-import { CommandStore, KlasaMessage } from 'klasa';
-import { table } from 'table';
+import { MessageAttachment } from "discord.js";
+import { CommandStore, KlasaMessage } from "klasa";
+import { table } from "table";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import Fletching from '../../lib/skilling/skills/fletching';
-import { SkillsEnum } from '../../lib/skilling/types';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { FletchingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, stringMatches } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
+import { Activity, Time, xpBoost } from "../../lib/constants";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { UserSettings } from "../../lib/settings/types/UserSettings";
+import Fletching from "../../lib/skilling/skills/fletching";
+import { SkillsEnum } from "../../lib/skilling/types";
+import { SlayerTaskUnlocksEnum } from "../../lib/slayer/slayerUnlocks";
+import { hasSlayerUnlock } from "../../lib/slayer/slayerUtil";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { FletchingActivityTaskOptions } from "../../lib/types/minions";
+import { formatDuration, stringMatches } from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -16,63 +20,90 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '[quantity:int{1}|name:...string] [name:...string]',
-			usageDelim: ' ',
-			description: 'Sends your minion to fletch items.',
-			examples: ['+fletch shortbow (u)', '+fletch 5 Oak shield'],
-			categoryFlags: ['minion', 'skilling']
+			usage: "[quantity:int{1}|name:...string] [name:...string]",
+			usageDelim: " ",
+			description: "Sends your minion to fletch items.",
+			examples: ["+fletch shortbow (u)", "+fletch 5 Oak shield"],
+			categoryFlags: ["minion", "skilling"],
 		});
 	}
 
 	@minionNotBusy
 	@requiresMinion
-	async run(msg: KlasaMessage, [quantity, fletchName = '']: [null | number | string, string]) {
+	async run(
+		msg: KlasaMessage,
+		[quantity, fletchName = ""]: [null | number | string, string]
+	) {
 		if (msg.flagArgs.items) {
 			const normalTable = table([
-				['Item Name', 'Lvl', 'XP', 'Items Required'],
-				...Fletching.Fletchables.map(i => [
+				["Item Name", "Lvl", "XP", "Items Required"],
+				...Fletching.Fletchables.map((i) => [
 					i.name,
 					`${i.level}`,
 					`${i.xp}`,
-					`${i.inputItems}`
-				])
+					`${i.inputItems}`,
+				]),
 			]);
-			return msg.channel.sendFile(Buffer.from(normalTable), `Fletchables.txt`);
+			return msg.channel.send({
+				files: [
+					new MessageAttachment(
+						Buffer.from(normalTable),
+						"Fletchables.txt"
+					),
+				],
+			});
 		}
 
-		if (typeof quantity === 'string') {
+		if (typeof quantity === "string") {
 			fletchName = quantity;
 			quantity = null;
 		}
 
-		const fletchable = Fletching.Fletchables.find(item => stringMatches(item.name, fletchName));
+		const fletchable = Fletching.Fletchables.find((item) =>
+			stringMatches(item.name, fletchName)
+		);
 
 		if (!fletchable) {
-			return msg.send(
+			return msg.channel.send(
 				`That is not a valid fletchable item, to see the items available do \`${msg.cmdPrefix}fletch --items\``
 			);
 		}
-		let sets = 'x';
+		let sets = "x";
 		if (fletchable.outputMultiple) {
-			sets = ' sets of';
+			sets = " sets of";
 		}
 
 		if (msg.author.skillLevel(SkillsEnum.Fletching) < fletchable.level) {
-			return msg.send(
+			return msg.channel.send(
 				`${msg.author.minionName} needs ${fletchable.level} Fletching to fletch ${fletchable.name}.`
 			);
+		}
+
+		if (fletchable.requiredSlayerUnlocks) {
+			let mySlayerUnlocks = msg.author.settings.get(
+				UserSettings.Slayer.SlayerUnlocks
+			);
+
+			const { success, errors } = hasSlayerUnlock(
+				mySlayerUnlocks as SlayerTaskUnlocksEnum[],
+				fletchable.requiredSlayerUnlocks
+			);
+			if (!success) {
+				throw `You don't have the required Slayer Unlocks to create this item.\n\nRequired: ${errors}`;
+			}
 		}
 
 		await msg.author.settings.sync(true);
 		const userBank = msg.author.bank();
 
 		// Get the base time to fletch the item then add on quarter of a second per item to account for banking/etc.
-		let timeToFletchSingleItem = fletchable.tickRate * Time.Second * 0.6 + Time.Second / 4;
+		let timeToFletchSingleItem =
+			fletchable.tickRate * Time.Second * 0.6 + Time.Second / 4;
 		if (fletchable.tickRate < 1) {
 			timeToFletchSingleItem = fletchable.tickRate * Time.Second * 0.6;
 		}
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 200984200;
 
 		if (quantity === null) {
 			quantity = Math.floor(maxTripLength / timeToFletchSingleItem);
@@ -82,18 +113,22 @@ export default class extends BotCommand {
 
 		const duration = quantity * timeToFletchSingleItem * xpBoost;
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of ${
 					fletchable.name
-				}s you can fletch is ${Math.floor(maxTripLength / timeToFletchSingleItem)}.`
+				}s you can fletch is ${Math.floor(
+					maxTripLength / timeToFletchSingleItem
+				)}.`
 			);
 		}
 
 		const itemsNeeded = fletchable.inputItems.clone().multiply(quantity);
 		if (!userBank.has(itemsNeeded.bank)) {
-			return msg.send(
+			return msg.channel.send(
 				`You don't have enough items. For ${quantity}x ${
 					fletchable.name
 				}, you're missing **${itemsNeeded.clone().remove(userBank)}**.`
@@ -102,16 +137,16 @@ export default class extends BotCommand {
 
 		await msg.author.removeItemsFromBank(itemsNeeded);
 
-		await addSubTaskToActivityTask<FletchingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<FletchingActivityTaskOptions>({
 			fletchableName: fletchable.name,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.Fletching
+			type: Activity.Fletching,
 		});
 
-		return msg.send(
+		return msg.channel.send(
 			`${msg.author.minionName} is now Fletching ${quantity}${sets} ${
 				fletchable.name
 			}, it'll take around ${formatDuration(

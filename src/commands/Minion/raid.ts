@@ -97,7 +97,7 @@ export default class extends BotCommand {
 				msg.author.getMinigameScore("RaidsChallengeMode"),
 			]);
 			let totalUniques = 0;
-			const cl = new Bank(msg.author.collectionLog);
+			const cl = msg.author.cl();
 			for (const item of uniques) {
 				totalUniques += cl.amount(item);
 			}
@@ -175,7 +175,7 @@ export default class extends BotCommand {
 
 		/*
 		if (!isChallengeMode && userKC < 50 && type === 'solo') {
-			return msg.channel.send(`You need atleast 50 KC before you can attempt a solo raid.`);
+			return msg.channel.send('You need atleast 50 KC before you can attempt a solo raid.');
 		}
 		*/
 
@@ -183,9 +183,14 @@ export default class extends BotCommand {
 			const normalKC = await msg.author.getMinigameScore("Raids");
 			if (normalKC < 200) {
 				return msg.channel.send(
-					`You need atleast 200 completions of the Chamber's of Xeric before you can attempt Challenge Mode.`
+					"You need atleast 200 completions of the Chamber's of Xeric before you can attempt Challenge Mode."
 				);
 			}
+		}
+		if (msg.author.minionIsBusy) {
+			return msg.channel.send(
+				"Your minion is busy, so you can't start a raid."
+			);
 		}
 
 		const partyOptions: MakePartyOptions = {
@@ -317,8 +322,6 @@ export default class extends BotCommand {
 
 		str += ` \n\n${debugStr}`;
 
-		return msg.channel.send(str, {
-			split: true,
-		});
+		return msg.channel.send(str);
 	}
 }

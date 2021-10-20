@@ -2,6 +2,7 @@ import { Task } from 'klasa';
 import { Bank } from 'oldschooljs';
 
 import { gloriesInventorySize } from '../../commands/Minion/chargeglories';
+import { Events } from '../../lib/constants';
 import { GloryChargingActivityTaskOptions } from '../../lib/types/minions';
 import { roll } from '../../lib/util';
 import { handleTripFinish } from '../../lib/util/handleTripFinish';
@@ -9,7 +10,7 @@ import { handleTripFinish } from '../../lib/util/handleTripFinish';
 export default class extends Task {
 	async run(data: GloryChargingActivityTaskOptions) {
 		const { quantity, userID, channelID } = data;
-		const user = await this.client.users.fetch(userID);
+		const user = await this.client.fetchUser(userID);
 		let deaths = 0;
 		let loot = new Bank();
 		for (let i = 0; i < quantity; i++) {
@@ -34,13 +35,17 @@ export default class extends Task {
 				: `${user}, ${user.minionName} finished charging ${amnt} Amulets of glory.`;
 
 		if (loot.length !== 0 && deaths > 0) {
-			str += ` They died ${deaths}x times, causing the loss of ${
-				gloriesInventorySize * deaths
-			} glories.`;
+			str += ` They died ${deaths}x times, causing the loss of ${gloriesInventorySize * deaths} glories.`;
 		}
 
 		if (loot.has('Amulet of eternal glory')) {
-			str += `\n**Your minion received an Amulet of eternal glory.**`;
+			str += '\n**Your minion received an Amulet of eternal glory.**';
+			this.client.emit(
+				Events.ServerNotification,
+				`**${user.username}'s** minion, ${user.minionName}, just received **${loot.amount(
+					'Amulet of eternal glory'
+				)}x Amulet of eternal glory**!`
+			);
 		}
 
 		await user.addItemsToBank(loot.bank, true);

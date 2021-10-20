@@ -1,20 +1,27 @@
 import { Client, SchemaFolder } from 'klasa';
 
-import defaultContracts from '../../minions/farming/defaultContracts';
 import { FarmingPatchTypes } from '../../minions/farming/types';
-import defaultBirdHouseTrap from '../../skilling/skills/hunter/defaultBirdHouseTrap';
+import { BlowpipeData } from '../../minions/types';
 import { SkillsEnum } from '../../skilling/types';
 
+const defaultBlowpipe: BlowpipeData = {
+	scales: 0,
+	dartID: null,
+	dartQuantity: 0
+};
+
 Client.defaultUserSchema
-	.add('GP', 'integer', { default: 0 })
+	.add('GP', 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
 	.add('QP', 'integer', { default: 0 })
 	.add('RSN', 'string', { default: null })
 	.add('pets', 'any', { default: {} })
 	.add('badges', 'integer', { array: true, default: [] })
 	.add('bitfield', 'integer', { array: true, default: [] })
 	.add('favoriteItems', 'integer', { array: true, default: [] })
+	.add('favorite_alchables', 'integer', { array: true, default: [] })
+	.add('favorite_food', 'integer', { array: true, default: [] })
 	.add('lastDailyTimestamp', 'integer', { default: 1 })
-	.add('sacrificedValue', 'integer', { default: 0, minimum: 0 })
+	.add('sacrificedValue', 'integer', { default: 0, minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
 	.add('bank', 'any', { default: {} })
 	.add('collectionLogBank', 'any', { default: {} })
 	.add('creatureScores', 'any', { default: {} })
@@ -33,6 +40,30 @@ Client.defaultUserSchema
 	.add('openable_scores', 'any', { default: {} })
 	.add('attack_style', 'string', { array: true, default: [] })
 	.add('total_cox_points', 'integer', { default: 0 })
+	.add('combat_options', 'integer', { array: true, default: [] })
+	.add('farming_patch_reminders', 'boolean', { default: true })
+	.add('pest_control_points', 'integer', { default: 0 })
+	.add('inferno_attempts', 'integer', { default: 0 })
+	.add('infernal_cape_sacrifices', 'integer', { default: 0 })
+	.add('volcanic_mine_points', 'integer', { default: 0 })
+	.add('blowpipe', 'any', { default: { ...defaultBlowpipe } })
+	.add('ironman_alts', 'string', { array: true, default: [] })
+	.add('main_account', 'string', { default: null })
+	.add('slayer', folder =>
+		folder
+			.add('points', 'integer', { default: 0 })
+			.add('task_streak', 'integer', { default: 0 })
+			.add('remember_master', 'string', { default: null })
+			.add('unlocks', 'integer', { array: true, default: [] })
+			.add('blocked_ids', 'integer', { array: true, default: [] })
+			.add('autoslay_options', 'integer', { array: true, default: [] })
+			.add('superior_count', 'integer', { default: 0 })
+			.add('last_task', 'integer', { default: 0 })
+			.add('unsired_offered', 'integer', { default: 0 })
+			.add('chewed_offered', 'integer', { default: 0 })
+	)
+
+	.add('bank_bg_hex', 'string', { default: null })
 	.add('minion', folder =>
 		folder
 			.add('name', 'string')
@@ -40,10 +71,10 @@ Client.defaultUserSchema
 			.add('ironman', 'boolean', { default: false })
 			.add('icon', 'string', { default: null })
 			.add('equippedPet', 'integer', { default: null })
-			.add('farmingContract', 'any', { default: defaultContracts })
+			.add('farmingContract', 'any', { default: null })
 			.add('defaultCompostToUse', 'string', { default: 'compost' })
 			.add('defaultPay', 'boolean', { default: false })
-			.add('birdhouseTraps', 'any', { default: defaultBirdHouseTrap })
+			.add('birdhouseTraps', 'any', { default: null })
 	)
 	.add('stats', (folder: SchemaFolder) =>
 		folder
@@ -59,28 +90,38 @@ Client.defaultUserSchema
 	)
 	.add('skills', (folder: SchemaFolder) =>
 		folder
-			.add(SkillsEnum.Agility, 'integer', { default: 0 })
-			.add(SkillsEnum.Cooking, 'integer', { default: 0 })
-			.add(SkillsEnum.Fishing, 'integer', { default: 0 })
-			.add(SkillsEnum.Mining, 'integer', { default: 0 })
-			.add(SkillsEnum.Smithing, 'integer', { default: 0 })
-			.add(SkillsEnum.Woodcutting, 'integer', { default: 0 })
-			.add(SkillsEnum.Firemaking, 'integer', { default: 0 })
-			.add(SkillsEnum.Runecraft, 'integer', { default: 0 })
-			.add(SkillsEnum.Crafting, 'integer', { default: 0 })
-			.add(SkillsEnum.Prayer, 'integer', { default: 0 })
-			.add(SkillsEnum.Fletching, 'integer', { default: 0 })
-			.add(SkillsEnum.Thieving, 'integer', { default: 0 })
-			.add(SkillsEnum.Farming, 'integer', { default: 0 })
-			.add(SkillsEnum.Herblore, 'integer', { default: 0 })
-			.add(SkillsEnum.Hunter, 'integer', { default: 0 })
-			.add(SkillsEnum.Construction, 'integer', { default: 0 })
-			.add(SkillsEnum.Magic, 'integer', { default: 0 })
-			.add(SkillsEnum.Ranged, 'integer', { default: 0 })
-			.add(SkillsEnum.Attack, 'integer', { default: 0 })
-			.add(SkillsEnum.Strength, 'integer', { default: 0 })
-			.add(SkillsEnum.Defence, 'integer', { default: 0 })
-			.add(SkillsEnum.Hitpoints, 'integer', { default: 1154 })
+			.add(SkillsEnum.Agility, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Cooking, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Fishing, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Mining, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Smithing, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Woodcutting, 'integer', {
+				default: 0,
+				maximum: Number.MAX_SAFE_INTEGER
+			})
+			.add(SkillsEnum.Firemaking, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Runecraft, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Crafting, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Prayer, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Fletching, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Thieving, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Farming, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Herblore, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Hunter, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Construction, 'integer', {
+				default: 0,
+				maximum: Number.MAX_SAFE_INTEGER
+			})
+			.add(SkillsEnum.Magic, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Ranged, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Attack, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Strength, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Defence, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Slayer, 'integer', { default: 0, maximum: Number.MAX_SAFE_INTEGER })
+			.add(SkillsEnum.Hitpoints, 'integer', {
+				default: 1154,
+				maximum: Number.MAX_SAFE_INTEGER
+			})
 	)
 	.add('gear', (folder: SchemaFolder) =>
 		folder
@@ -89,6 +130,9 @@ Client.defaultUserSchema
 			.add('range', 'any', { default: null })
 			.add('misc', 'any', { default: null })
 			.add('skilling', 'any', { default: null })
+			.add('wildy', 'any', { default: null })
+			.add('fashion', 'any', { default: null })
+			.add('other', 'any', { default: null })
 	)
 	.add('farmingPatches', (folder: SchemaFolder) =>
 		folder

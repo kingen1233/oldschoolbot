@@ -1,5 +1,7 @@
+import { Type } from '@sapphire/type';
 import { MessageAttachment } from 'discord.js';
-import { CommandStore, KlasaMessage, Stopwatch, Type, util } from 'klasa';
+import { CommandStore, KlasaMessage, Stopwatch, util } from 'klasa';
+import { Bank } from 'oldschooljs';
 import { inspect } from 'util';
 
 import { BotCommand } from '../../lib/structures/BotCommand';
@@ -15,37 +17,37 @@ export default class extends BotCommand {
 	}
 
 	async run(message: KlasaMessage, [code]: [string]) {
-		if (!this.client.owners.has(message.author)) return null;
-		const res = await this.eval(message, code);
-		if (res === undefined) return;
-		const { success, result, time, type } = res;
-		if (typeof result !== 'string') return null;
+		try {
+			if (!this.client.owners.has(message.author)) return null;
+			const res = await this.eval(message, code);
+			if (res === undefined) return;
+			const { success, result, time, type } = res;
+			if (typeof result !== 'string') return null;
 
-		const footer = util.codeBlock('ts', type);
-		const output = message.language.get(
-			success ? 'COMMAND_EVAL_OUTPUT' : 'COMMAND_EVAL_ERROR',
-			time,
-			util.codeBlock('js', result),
-			footer
-		);
+			const footer = util.codeBlock('ts', type);
+			const output = message.language.get(
+				success ? 'COMMAND_EVAL_OUTPUT' : 'COMMAND_EVAL_ERROR',
+				time,
+				util.codeBlock('js', result),
+				footer
+			);
 
-		if ('silent' in message.flagArgs) return null;
+			if ('silent' in message.flagArgs) return null;
 
-		// Handle too-long-messages
-		if (output.length > 2000) {
-			if (message.guild && message.channel.attachable) {
-				return message.channel.sendFile(
-					Buffer.from(result),
-					'output.txt',
-					message.language.get('COMMAND_EVAL_SENDFILE', time, footer)
-				);
+			// Handle too-long-messages
+			if (output.length > 2000) {
+				if (message.guild && message.channel.attachable) {
+					return message.channel.send({ files: [new MessageAttachment(Buffer.from(result), 'output.txt')] });
+				}
+				this.client.emit('log', result);
+				return;
 			}
-			this.client.emit('log', result);
-			return message.sendLocale('COMMAND_EVAL_SENDCONSOLE', [time, footer]);
-		}
 
-		// If it's a message that can be sent correctly, send it
-		return message.sendMessage(output);
+			// If it's a message that can be sent correctly, send it
+			return message.channel.send(output);
+		} catch (err) {
+			console.error(err);
+		}
 	}
 
 	// Eval the input
@@ -63,6 +65,7 @@ export default class extends BotCommand {
 		// eslint-disable-next-line @typescript-eslint/init-declarations
 		let type!: Type;
 		try {
+			code = `\nconst {Bank} = require('oldschooljs');\n${code}`;
 			if (flags.async) code = `(async () => {\n${code}\n})();`;
 			else if (flags.bk) code = `(async () => {\nreturn ${code}\n})();`;
 			// eslint-disable-next-line no-eval
@@ -86,12 +89,13 @@ export default class extends BotCommand {
 		}
 
 		stopwatch.stop();
-		if (msg.flagArgs.bk) {
-			msg.channel.sendBankImage({ bank: result });
+		if (msg.flagArgs.bk || result instanceof Bank) {
+			msg.channel.sendBankImage({ bank: result, title: msg.flagArgs.title, flags: msg.flagArgs });
+			return;
 		}
 
 		if (Buffer.isBuffer(result)) {
-			msg.channel.send(new MessageAttachment(result));
+			msg.channel.send({ files: [new MessageAttachment(result)] });
 			return;
 		}
 

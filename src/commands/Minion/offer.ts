@@ -1,32 +1,41 @@
-import { randArrItem } from 'e';
-import { CommandStore, KlasaMessage } from 'klasa';
-import { Bank } from 'oldschooljs';
+import { objectKeys, randArrItem, Time } from "e";
+import { CommandStore, KlasaMessage, KlasaUser } from "klasa";
+import { Bank } from "oldschooljs";
 
-import { Activity, Time, xpBoost } from '../../lib/constants';
-import { evilChickenOutfit } from '../../lib/data/collectionLog';
-import { minionNotBusy, requiresMinion } from '../../lib/minions/decorators';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
-import { birdsNestID, treeSeedsNest, wysonSeedsNest } from '../../lib/simulation/birdsNest';
-import Prayer from '../../lib/skilling/skills/prayer';
-import { SkillsEnum } from '../../lib/skilling/types';
-import { BotCommand } from '../../lib/structures/BotCommand';
-import { OfferingActivityTaskOptions } from '../../lib/types/minions';
-import { formatDuration, roll, stringMatches } from '../../lib/util';
-import addSubTaskToActivityTask from '../../lib/util/addSubTaskToActivityTask';
-import getOSItem from '../../lib/util/getOSItem';
+import { Activity, Events, xpBoost } from "../../lib/constants";
+import { evilChickenOutfit } from "../../lib/data/CollectionsExport";
+import { Offerables } from "../../lib/data/offerData";
+import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
+import { UserSettings } from "../../lib/settings/types/UserSettings";
+import { birdsNestID, treeSeedsNest } from "../../lib/simulation/birdsNest";
+import Prayer from "../../lib/skilling/skills/prayer";
+import { SkillsEnum } from "../../lib/skilling/types";
+import { BotCommand } from "../../lib/structures/BotCommand";
+import { ItemBank } from "../../lib/types";
+import { OfferingActivityTaskOptions } from "../../lib/types/minions";
+import {
+	filterBankFromArrayOfItems,
+	formatDuration,
+	rand,
+	roll,
+	stringMatches,
+} from "../../lib/util";
+import addSubTaskToActivityTask from "../../lib/util/addSubTaskToActivityTask";
+import { formatOrdinal } from "../../lib/util/formatOrdinal";
+import getOSItem from "../../lib/util/getOSItem";
 
 const specialBones = [
 	{
-		item: getOSItem('Long bone'),
-		xp: 4500
+		item: getOSItem("Long bone"),
+		xp: 4500,
 	},
 	{
-		item: getOSItem('Curved bone'),
-		xp: 6750
-	}
+		item: getOSItem("Curved bone"),
+		xp: 6750,
+	},
 ];
 
-const eggs = ['Red bird egg', 'Green bird egg', 'Blue bird egg'].map(getOSItem);
+const eggs = ["Red bird egg", "Green bird egg", "Blue bird egg"].map(getOSItem);
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -34,29 +43,119 @@ export default class extends BotCommand {
 			altProtection: true,
 			oneAtTime: true,
 			cooldown: 1,
-			usage: '<quantity:int{1}|name:...string> [name:...string]',
-			usageDelim: ' ',
-			categoryFlags: ['minion', 'skilling'],
-			description: 'Sends your minion to offer bones to the chaos altar.',
-			examples: ['+offer dragon bones']
+			usage: "<quantity:int{1}|name:...string> [name:...string]",
+			usageDelim: " ",
+			categoryFlags: ["minion", "skilling"],
+			description: "Sends your minion to offer bones to the chaos altar.",
+			examples: ["+offer dragon bones"],
 		});
+	}
+
+	notifyUniques(
+		user: KlasaUser,
+		activity: string,
+		uniques: number[],
+		loot: ItemBank,
+		qty: number,
+		randQty?: number
+	) {
+		const itemsToAnnounce = filterBankFromArrayOfItems(uniques, loot);
+		if (objectKeys(itemsToAnnounce).length > 0) {
+			const lootStr = new Bank(itemsToAnnounce).toString();
+			this.client.emit(
+				Events.ServerNotification,
+				`**${user.username}'s** minion, ${
+					user.minionName
+				}, while offering ${qty}x ${activity}, found **${lootStr}**${
+					randQty
+						? ` on their ${formatOrdinal(randQty)} offering!`
+						: "!"
+				}`
+			);
+		}
 	}
 
 	@minionNotBusy
 	@requiresMinion
-	async run(msg: KlasaMessage, [quantity, boneName = '']: [null | number | string, string]) {
+	async run(
+		msg: KlasaMessage,
+		[quantity, boneName = ""]: [null | number | string, string]
+	) {
 		const userBank = msg.author.bank();
 
-		if (typeof quantity === 'string') {
+		if (typeof quantity === "string") {
 			boneName = quantity;
 			quantity = null;
 		}
 
-		const egg = eggs.find(egg => stringMatches(boneName, egg.name));
+		const whichOfferable = Offerables.find(
+			(item) =>
+				stringMatches(boneName, item.name) ||
+				(item.aliases &&
+					item.aliases.some((alias) =>
+						stringMatches(alias, boneName)
+					))
+		);
+		if (whichOfferable) {
+			const offerableOwned = userBank.amount(whichOfferable.itemID);
+			if (offerableOwned === 0) {
+				return msg.channel.send(
+					`You don't have any ${whichOfferable.name} to offer to the ${whichOfferable.offerWhere}.`
+				);
+			}
+			quantity = quantity ?? offerableOwned;
+			if (quantity > offerableOwned) {
+				return msg.channel.send(
+					`You don't have ${quantity} ${whichOfferable.name} to offer the ${whichOfferable.offerWhere}. You have ${offerableOwned}.`
+				);
+			}
+			await msg.author.removeItemsFromBank({
+				[whichOfferable.itemID]: quantity,
+			});
+			let loot = new Bank();
+			loot.add(whichOfferable.table.roll(quantity));
+
+			let score = 0;
+			const { previousCL, itemsAdded } = await msg.author.addItemsToBank(
+				loot.values(),
+				true
+			);
+			if (whichOfferable.economyCounter) {
+				score = msg.author.settings.get(
+					whichOfferable.economyCounter
+				) as number;
+				if (typeof quantity !== "number") quantity = parseInt(quantity);
+				msg.author.settings.update(
+					whichOfferable.economyCounter,
+					score + quantity
+				);
+			}
+			// Notify uniques
+			if (whichOfferable.uniques) {
+				this.notifyUniques(
+					msg.author,
+					whichOfferable.name,
+					whichOfferable.uniques,
+					itemsAdded,
+					quantity,
+					score + rand(1, quantity)
+				);
+			}
+
+			return msg.channel.sendBankImage({
+				bank: itemsAdded,
+				title: `Loot from offering ${quantity} ${whichOfferable.name}`,
+				flags: { showNewCL: 1 },
+				user: msg.author,
+				cl: previousCL,
+			});
+		}
+
+		const egg = eggs.find((egg) => stringMatches(boneName, egg.name));
 		if (egg) {
 			const quantityOwned = userBank.amount(egg.id);
 			if (quantityOwned === 0) {
-				return msg.channel.send(`You don't own any of these eggs.`);
+				return msg.channel.send("You don't own any of these eggs.");
 			}
 			if (!quantity) quantity = quantityOwned;
 			await msg.author.removeItemsFromBank({ [egg.id]: quantity });
@@ -66,42 +165,63 @@ export default class extends BotCommand {
 					loot.add(randArrItem(evilChickenOutfit));
 				} else {
 					loot.add(birdsNestID);
-					loot.add(roll(2) ? treeSeedsNest.roll() : wysonSeedsNest.roll());
+					loot.add(treeSeedsNest.roll());
 				}
 			}
 
-			const xpStr = await msg.author.addXP(SkillsEnum.Prayer, quantity * 100);
+			const xpStr = await msg.author.addXP({
+				skillName: SkillsEnum.Prayer,
+				amount: quantity * 100,
+			});
 			await msg.author.addItemsToBank(loot, true);
+
+			this.notifyUniques(
+				msg.author,
+				egg.name,
+				evilChickenOutfit,
+				loot.bank,
+				quantity
+			);
+
 			return msg.channel.send(
 				`You offered ${quantity}x ${egg.name} to the Shrine and received ${loot} and ${xpStr}.`
 			);
 		}
 
-		const specialBone = specialBones.find(bone => stringMatches(bone.item.name, boneName));
+		const specialBone = specialBones.find((bone) =>
+			stringMatches(bone.item.name, boneName)
+		);
 		if (specialBone) {
 			if (msg.author.settings.get(UserSettings.QP) < 8) {
-				return msg.send(`You need atleast 8 QP to offer long/curved bones for XP.`);
+				return msg.channel.send(
+					"You need atleast 8 QP to offer long/curved bones for XP."
+				);
 			}
 			if (msg.author.skillLevel(SkillsEnum.Construction) < 30) {
-				return msg.send(
-					`You need atleast level 30 Construction to offer long/curved bones for XP.`
+				return msg.channel.send(
+					"You need atleast level 30 Construction to offer long/curved bones for XP."
 				);
 			}
 			const amountHas = userBank.amount(specialBone.item.id);
 			if (quantity === null) quantity = Math.max(amountHas, 1);
 			if (amountHas < quantity) {
-				return msg.send(
+				return msg.channel.send(
 					`You don't have ${quantity}x ${specialBone.item.name}, you have ${amountHas}.`
 				);
 			}
 			const xp = quantity * specialBone.xp;
 			await Promise.all([
-				msg.author.addXP(SkillsEnum.Construction, xp),
-				msg.author.removeItemFromBank(specialBone.item.id, quantity)
+				msg.author.addXP({
+					skillName: SkillsEnum.Construction,
+					amount: xp,
+				}),
+				msg.author.removeItemsFromBank(
+					new Bank().add(specialBone.item.id, quantity)
+				),
 			]);
-			return msg.send(
+			return msg.channel.send(
 				`You handed over ${quantity} ${specialBone.item.name}${
-					quantity > 1 ? "'s" : ''
+					quantity > 1 ? "'s" : ""
 				} to Barlak and received ${xp} Construction XP.`
 			);
 		}
@@ -109,68 +229,81 @@ export default class extends BotCommand {
 		const speedMod = 4.8;
 
 		const bone = Prayer.Bones.find(
-			bone =>
+			(bone) =>
 				stringMatches(bone.name, boneName) ||
-				stringMatches(bone.name.split(' ')[0], boneName)
+				stringMatches(bone.name.split(" ")[0], boneName)
 		);
 
 		if (!bone) {
-			return msg.send(
+			return msg.channel.send(
 				`That's not a valid bone to offer. Valid bones are ${Prayer.Bones.map(
-					bone => bone.name
-				).join(', ')}.`
+					(bone) => bone.name
+				).join(", ")}.`
 			);
 		}
 
 		if (msg.author.skillLevel(SkillsEnum.Prayer) < bone.level) {
-			return msg.send(
+			return msg.channel.send(
 				`${msg.author.minionName} needs ${bone.level} Prayer to offer ${bone.name}.`
 			);
 		}
 
-		const timeToBuryABone = speedMod * (Time.Second * 1.2 + Time.Second / 4);
+		const timeToBuryABone =
+			speedMod * (Time.Second * 1.2 + Time.Second / 4);
 
 		const amountOfThisBone = userBank.amount(bone.inputId);
-		if (!amountOfThisBone) return msg.send(`You have no ${bone.name}.`);
+		if (!amountOfThisBone)
+			return msg.channel.send(`You have no ${bone.name}.`);
 
-		const maxTripLength = 200984200 
+		const maxTripLength = 200984200;
 
 		// If no quantity provided, set it to the max.
 		if (quantity === null) {
-			quantity = Math.min(Math.floor(maxTripLength / timeToBuryABone), amountOfThisBone);
+			quantity = Math.min(
+				Math.floor(maxTripLength / timeToBuryABone),
+				amountOfThisBone
+			);
 		}
 
 		// Check the user has the required bones to bury.
 		if (amountOfThisBone < quantity) {
-			return msg.send(`You dont have ${quantity}x ${bone.name}.`);
+			return msg.channel.send(`You dont have ${quantity}x ${bone.name}.`);
 		}
 
 		const duration = quantity * timeToBuryABone * xpBoost;
 
 		if (duration > maxTripLength) {
-			return msg.send(
-				`${msg.author.minionName} can't go on trips longer than ${formatDuration(
+			return msg.channel.send(
+				`${
+					msg.author.minionName
+				} can't go on trips longer than ${formatDuration(
 					maxTripLength
 				)}, try a lower quantity. The highest amount of ${
 					bone.name
-				}s you can bury is ${Math.floor(maxTripLength / timeToBuryABone)}.`
+				}s you can bury is ${Math.floor(
+					maxTripLength / timeToBuryABone
+				)}.`
 			);
 		}
 
-		await msg.author.removeItemFromBank(bone.inputId, quantity);
+		await msg.author.removeItemsFromBank(
+			new Bank().add(bone.inputId, quantity)
+		);
 
-		await addSubTaskToActivityTask<OfferingActivityTaskOptions>(this.client, {
+		await addSubTaskToActivityTask<OfferingActivityTaskOptions>({
 			boneID: bone.inputId,
 			userID: msg.author.id,
 			channelID: msg.channel.id,
 			quantity,
 			duration,
-			type: Activity.Offering
+			type: Activity.Offering,
 		});
-		return msg.send(
+		return msg.channel.send(
 			`${msg.author.minionName} is now offering ${quantity}x ${
 				bone.name
-			} at the Chaos altar, it'll take around ${formatDuration(duration)} to finish.`
+			} at the Chaos altar, it'll take around ${formatDuration(
+				duration
+			)} to finish.`
 		);
 	}
 }

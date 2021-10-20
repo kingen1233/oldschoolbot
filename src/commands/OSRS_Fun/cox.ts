@@ -3,11 +3,11 @@ import { Bank, Util } from 'oldschooljs';
 import { ItemBank } from 'oldschooljs/dist/meta/types';
 import ChambersOfXeric from 'oldschooljs/dist/simulation/minigames/ChambersOfXeric';
 
-import { coxLog } from '../../lib/data/collectionLog';
+import { chambersOfXericCL } from '../../lib/data/CollectionsExport';
 import { BotCommand } from '../../lib/structures/BotCommand';
 import { addBanks, filterBankFromArrayOfItems } from '../../lib/util';
 
-const itemsToShow = Object.values(coxLog).flat(1);
+const itemsToShow = chambersOfXericCL;
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -62,14 +62,13 @@ export default class extends BotCommand {
 		if (amount > limit) {
 			return (
 				`The quantity you gave exceeds your limit of ${limit.toLocaleString()}! ` +
-				`*You can increase your limit by becoming a patron at <https://www.patreon.com/oldschoolbot>.`
+				'*You can increase your limit by becoming a patron at <https://www.patreon.com/oldschoolbot>.'
 			);
 		}
 
 		const arrayOfNames = names.split(' ');
 
-		if (arrayOfNames.length > 5)
-			return msg.send(`You can't have more than 5 members in a raid team.`);
+		if (arrayOfNames.length > 5) return msg.channel.send("You can't have more than 5 members in a raid team.");
 
 		const team = arrayOfNames.map(member => ({
 			id: member,
@@ -91,15 +90,11 @@ export default class extends BotCommand {
 			}
 		}
 
-		let result = `In a group raid with ${team.length} users with ${Util.toKMB(
-			points
-		)} points each...\n`;
+		let result = `In a group raid with ${team.length} users with ${Util.toKMB(points)} points each...\n`;
 		for (const [memberID, lootBank] of Object.entries(loot)) {
-			result += `**${memberID}** received: ${new Bank(
-				filterBankFromArrayOfItems(itemsToShow, lootBank)
-			)}\n`;
+			result += `**${memberID}** received: ${new Bank(filterBankFromArrayOfItems(itemsToShow, lootBank))}\n`;
 		}
 
-		return msg.send(result);
+		return msg.channel.send(result);
 	}
 }

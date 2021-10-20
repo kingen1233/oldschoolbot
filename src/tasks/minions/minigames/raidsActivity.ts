@@ -1,31 +1,35 @@
+import { MessageAttachment } from 'discord.js';
 import { noOp, shuffleArr } from 'e';
 import { Task } from 'klasa';
 import { Bank } from 'oldschooljs';
 import ChambersOfXeric from 'oldschooljs/dist/simulation/minigames/ChambersOfXeric';
 
 import { Emoji, Events } from '../../../lib/constants';
-import { coxLog, metamorphPets } from '../../../lib/data/collectionLog';
+import { chambersOfXericCL, chambersOfXericMetamorphPets } from '../../../lib/data/CollectionsExport';
 import { createTeam } from '../../../lib/data/cox';
 import { ClientSettings } from '../../../lib/settings/types/ClientSettings';
 import { UserSettings } from '../../../lib/settings/types/UserSettings';
 import { RaidsOptions } from '../../../lib/types/minions';
 import { addBanks, filterBankFromArrayOfItems, roll } from '../../../lib/util';
 import { formatOrdinal } from '../../../lib/util/formatOrdinal';
+import { handleTripFinish } from '../../../lib/util/handleTripFinish';
 import itemID from '../../../lib/util/itemID';
 import resolveItems from '../../../lib/util/resolveItems';
 import { sendToChannelID } from '../../../lib/util/webhook';
+import BankImageTask from '../../bankImage';
 
-const notPurple = resolveItems(['Torn prayer scroll', 'Dark relic']);
+const notPurple = resolveItems(['Torn prayer scroll', 'Dark relic', 'Onyx']);
 const greenItems = resolveItems(['Twisted ancestral colour kit']);
 const blueItems = resolveItems(['Metamorphic dust']);
+const purpleButNotAnnounced = resolveItems(['Dexterous prayer scroll', 'Arcane prayer scroll']);
 
-const purpleItems = [...Object.values(coxLog), ...metamorphPets]
-	.flat(2)
-	.filter(i => !notPurple.includes(i));
+const purpleItems = chambersOfXericCL.filter(i => !notPurple.includes(i));
 
 export default class extends Task {
-	async run({ channelID, users, challengeMode, duration, leader }: RaidsOptions) {
-		const allUsers = await Promise.all(users.map(async u => this.client.users.fetch(u)));
+	async run(data: RaidsOptions) {
+		const { channelID, users, challengeMode, duration, leader } = data;
+		const allUsers = await Promise.all(users.map(async u => this.client.fetchUser(u)));
+		const leaderUser = allUsers.find(u => u.id === leader)!;
 		const team = await createTeam(allUsers, challengeMode);
 
 		const loot = ChambersOfXeric.complete({
@@ -48,15 +52,16 @@ export default class extends Task {
 			allUsers.map(u => {
 				if (challengeMode) {
 					u.incrementMinigameScore('RaidsChallengeMode', 1);
-					u.incrementMinigameScore('Raids', 1);
 				} else {
 					u.incrementMinigameScore('Raids', 1);
 				}
 			})
 		);
 
+		const onyxChance = users.length * 70;
+
 		for (let [userID, _userLoot] of Object.entries(loot)) {
-			const user = await this.client.users.fetch(userID).catch(noOp);
+			const user = await this.client.fetchUser(userID).catch(noOp);
 			if (!user) continue;
 			const { personalPoints, deaths, deathChance } = team.find(u => u.id === user.id)!;
 
@@ -72,10 +77,14 @@ export default class extends Task {
 				user.settings.get(UserSettings.CollectionLogBank)[itemID('Metamorphic dust')]
 			) {
 				const { bank } = user.allItemsOwned();
-				const unownedPet = shuffleArr(metamorphPets).find(pet => !bank[pet]);
+				const unownedPet = shuffleArr(chambersOfXericMetamorphPets).find(pet => !bank[pet]);
 				if (unownedPet) {
 					userLoot.add(unownedPet);
 				}
+			}
+
+			if (!totalLoot.has('Onyx') && roll(onyxChance)) {
+				userLoot.add('Onyx');
 			}
 
 			totalLoot.add(userLoot);
@@ -86,13 +95,11 @@ export default class extends Task {
 			const isGreen = items.some(([item]) => greenItems.includes(item.id));
 			const isBlue = items.some(([item]) => blueItems.includes(item.id));
 			const emote = isBlue ? Emoji.Blue : isGreen ? Emoji.Green : Emoji.Purple;
-			if (isPurple) {
+			if (items.some(([item]) => purpleItems.includes(item.id) && !purpleButNotAnnounced.includes(item.id))) {
 				const itemsToAnnounce = filterBankFromArrayOfItems(purpleItems, userLoot.bank);
 				this.client.emit(
 					Events.ServerNotification,
-					`${emote} ${user.username} just received **${new Bank(
-						itemsToAnnounce
-					)}** on their ${formatOrdinal(
+					`${emote} ${user.username} just received **${new Bank(itemsToAnnounce)}** on their ${formatOrdinal(
 						await user.getMinigameScore(challengeMode ? 'RaidsChallengeMode' : 'Raids')
 					)} raid.`
 				);
@@ -108,12 +115,45 @@ export default class extends Task {
 
 		await this.client.settings.update(
 			ClientSettings.EconomyStats.CoxLoot,
-			addBanks([
-				this.client.settings.get(ClientSettings.EconomyStats.CoxLoot),
-				totalLoot.bank
-			])
+			addBanks([this.client.settings.get(ClientSettings.EconomyStats.CoxLoot), totalLoot.bank])
 		);
 
-		sendToChannelID(this.client, channelID, { content: resultMessage });
+		if (allUsers.length === 1) {
+			handleTripFinish(
+				this.client,
+				allUsers[0],
+				channelID,
+				resultMessage,
+				res => {
+					const flags: Record<string, string> = challengeMode ? { cm: 'cm' } : {};
+
+					// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+					// @ts-ignore
+					if (!res.prompter) res.prompter = {};
+					// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+					// @ts-ignore
+					res.prompter.flags = flags;
+
+					allUsers[0].log('continued trip of solo CoX');
+					return this.client.commands.get('raid')!.run(res, ['solo']);
+				},
+				new MessageAttachment(
+					(
+						await (this.client.tasks.get('bankImage') as BankImageTask).generateBankImage(
+							loot[leaderUser.id],
+							`${leaderUser.username}'s Raids Loot'`,
+							false,
+							{},
+							leaderUser,
+							leaderUser.cl().bank
+						)
+					).image!
+				),
+				data,
+				null
+			);
+		} else {
+			sendToChannelID(this.client, channelID, { content: resultMessage });
+		}
 	}
 }

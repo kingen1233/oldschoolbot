@@ -2,15 +2,8 @@ import { CommandStore, KlasaMessage } from 'klasa';
 import { Bank, Util } from 'oldschooljs';
 
 import { ClientSettings } from '../../lib/settings/types/ClientSettings';
-import { UserSettings } from '../../lib/settings/types/UserSettings';
 import { BotCommand } from '../../lib/structures/BotCommand';
-import { addBanks } from '../../lib/util';
-
-const options = {
-	max: 1,
-	time: 10000,
-	errors: ['time']
-};
+import { updateBankSetting, updateGPTrackSetting } from '../../lib/util';
 
 export default class extends BotCommand {
 	public constructor(store: CommandStore, file: string[], directory: string) {
@@ -25,62 +18,37 @@ export default class extends BotCommand {
 		});
 	}
 
-	async run(msg: KlasaMessage, [[bankToSell, totalPrice]]: [[Bank, number]]) {
-		if (msg.author.isIronman) return msg.send(`Iron players can't sell items.`);
+	async run(msg: KlasaMessage, [[bankToSell]]: [[Bank, number]]) {
+		if (msg.author.isIronman) return msg.channel.send("Iron players can't sell items.");
+		let totalPrice = 0;
+		const customPrices = this.client.settings.get(ClientSettings.CustomPrices);
+		for (const [item, qty] of bankToSell.items()) {
+			const price = customPrices[item.id] ?? item.price;
+			totalPrice += price * qty;
+		}
 		totalPrice = Math.floor(totalPrice * 0.8);
 
-		if (!msg.flagArgs.confirm && !msg.flagArgs.cf) {
-			const sellMsg = await msg.channel.send(
-				`${
-					msg.author
-				}, say \`confirm\` to sell ${bankToSell} for **${totalPrice.toLocaleString()}** (${Util.toKMB(
-					totalPrice
-				)}).`
-			);
-
-			try {
-				await msg.channel.awaitMessages(
-					_msg =>
-						_msg.author.id === msg.author.id &&
-						_msg.content.toLowerCase() === 'confirm',
-					options
-				);
-			} catch (err) {
-				return sellMsg.edit(`Cancelling sale.`);
-			}
-		}
+		await msg.confirm(
+			`${
+				msg.author
+			}, please confirm you want to sell ${bankToSell} for **${totalPrice.toLocaleString()}** (${Util.toKMB(
+				totalPrice
+			)}).`
+		);
 
 		const tax = Math.ceil((totalPrice / 0.8) * 0.2);
 
-		await msg.author.removeItemsFromBank(bankToSell.bank);
-		await msg.author.settings.update(
-			UserSettings.GP,
-			msg.author.settings.get(UserSettings.GP) + totalPrice
-		);
+		await Promise.all([msg.author.removeItemsFromBank(bankToSell.bank), msg.author.addGP(totalPrice)]);
 
-		const itemSellTaxBank = this.client.settings.get(
-			ClientSettings.EconomyStats.ItemSellTaxBank
-		);
-		const dividedAmount = tax / 1_000_000;
-		this.client.settings.update(
-			ClientSettings.EconomyStats.ItemSellTaxBank,
-			Math.floor(itemSellTaxBank + Math.round(dividedAmount * 100) / 100)
-		);
-
-		await this.client.settings.update(
-			ClientSettings.EconomyStats.SoldItemsBank,
-			addBanks([
-				this.client.settings.get(ClientSettings.EconomyStats.SoldItemsBank),
-				bankToSell.bank
-			])
-		);
+		updateGPTrackSetting(this.client, ClientSettings.EconomyStats.GPSourceSellingItems, totalPrice);
+		updateBankSetting(this.client, ClientSettings.EconomyStats.SoldItemsBank, bankToSell.bank);
 
 		msg.author.log(`sold ${JSON.stringify(bankToSell.bank)} for ${totalPrice}`);
 
-		return msg.send(
-			`Sold ${bankToSell} for **${totalPrice.toLocaleString()}gp (${Util.toKMB(
-				totalPrice
-			)})**. Tax: ${Util.toKMB(tax)}`
+		return msg.channel.send(
+			`Sold ${bankToSell} for **${totalPrice.toLocaleString()}gp (${Util.toKMB(totalPrice)})**. Tax: ${Util.toKMB(
+				tax
+			)}`
 		);
 	}
 }
