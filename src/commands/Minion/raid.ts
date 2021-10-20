@@ -295,7 +295,7 @@ export default class extends BotCommand {
 
 			duration *= 0.5 * amountOfRaids;
 
-			await addSubTaskToActivityTask<RaidsOptions>(this.client, {
+			await addSubTaskToActivityTask<RaidsOptions>({
 				userID: msg.author.id,
 				channelID: msg.channel.id,
 				duration,

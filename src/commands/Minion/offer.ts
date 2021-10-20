@@ -1,8 +1,8 @@
-import { objectKeys, randArrItem, Time } from "e";
+import { objectKeys, randArrItem } from "e";
 import { CommandStore, KlasaMessage, KlasaUser } from "klasa";
 import { Bank } from "oldschooljs";
 
-import { Activity, Events, xpBoost } from "../../lib/constants";
+import { Activity, Events, Time, xpBoost } from "../../lib/constants";
 import { evilChickenOutfit } from "../../lib/data/CollectionsExport";
 import { Offerables } from "../../lib/data/offerData";
 import { minionNotBusy, requiresMinion } from "../../lib/minions/decorators";
